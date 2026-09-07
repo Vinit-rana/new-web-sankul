@@ -50,6 +50,7 @@ For the *how* (tiers, scopes, flush map), see [`CACHING.md`](./CACHING.md).
 | offline, inquiry | live enquiries; no matching cache tag |
 | administrator, role, permission, permissionCategory | super-admin config, rarely read |
 | address, customer-master, pc-material, testSeries | reference/relational data with no matching cache tag |
+| app-version (client `/check`) | force-update gate — must be evaluated fresh on every app launch (cache removed 2026-09-07) |
 
 > "No matching cache tag" means there's no entity label for it yet, so it can't be
 > auto-cleared when edited — safer to leave uncached than risk stale data.
@@ -70,7 +71,6 @@ For the *how* (tiers, scopes, flush map), see [`CACHING.md`](./CACHING.md).
 | inquiry | contact-us | static info |
 | notification | image-notifications (banners) | same for everyone |
 | address | states, cities, centers, educations, characteristics | public dropdowns |
-| app-version | version check | app config |
 | offline | centers, batches (+ detail) | same for all customers |
 | book | trending lists | no personal data |
 | course | categories | no personal data |

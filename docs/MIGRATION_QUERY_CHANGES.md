@@ -15,6 +15,24 @@
 
 ---
 
+## 2026-09-07 — Client app-version `/check` no longer cached
+
+> **Code-only, no DDL, no contract change.** Response shape unchanged.
+
+### Change
+- `GET /api/v1/client/app-version/check` had `cacheRoute({ ttl: 86400, scope: "shared" })`
+  with **no entity tag**, so nothing ever flushed it: a newly published store version or a
+  flipped force-update flag could stay invisible to clients for up to 24h.
+- Product requirement: the force-update gate must be a fresh call on every app launch.
+  The middleware is removed; the handler now runs the service on every request.
+- Docs updated: `docs/important/CACHING.md` (exclusions table), `docs/important/CACHING_COVERAGE.md`.
+
+### Impact
+- One extra DB/env read per app launch — trivial load, and it was never a hot path.
+- No flush action needed on deploy; existing `misc` cache keys simply expire.
+
+---
+
 ## 2026-09-03 — Admin dashboard: stale raw `price` on ws_test_series_subscription
 
 > **Code-only fix, no DDL, no contract change.** Plus: the 2026-09-01 StreamOS v1

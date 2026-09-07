@@ -1,5 +1,4 @@
 import { Router } from "express";
-import { cacheRoute } from "../../middlewares/cacheRoute";
 import { checkAppVersionHandler } from "./app-version.controller";
 
 const router = Router();
@@ -11,8 +10,10 @@ const router = Router();
 //
 // Query is validated inside the controller (not via `validate({ query })`):
 // Express 5 makes `req.query` getter-only, so the middleware's reassignment throws.
-// Tier-1 shared config; query params (platform/version) are auto-keyed by the
-// cache's normalized-query handling. No entity tag → "misc", short TTL.
-router.get("/check", cacheRoute({ ttl: 86400, scope: "shared" }), checkAppVersionHandler);
+// NOT cached (deliberate, 2026-09-07): this is the force-update gate. Every
+// launch must hit the service fresh so a newly published store version /
+// changed force-update flag is honoured immediately — a cached answer here
+// can keep the gate stale for the whole TTL. Do not re-add `cacheRoute`.
+router.get("/check", checkAppVersionHandler);
 
 export default router;

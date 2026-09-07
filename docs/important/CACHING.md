@@ -76,8 +76,9 @@ plan-popularity writes `autoFlush("plan")` (pin/recompute flip an embedded flag)
 exam `/categories`, catalog `/tests`, free `/free-materials`, book `/trending*`,
 category `/children` drill-downs + `/package-categories`, examCountdown (all),
 goal `/`, promocode `/`, referral `/terms` + `/faqs`, inquiry `/contactus`,
-notification `/image-notifications`, address reference dropdowns, app-version
-`/check`, offline center/batch masters.
+notification `/image-notifications`, address reference dropdowns, offline
+center/batch masters. (`app-version /check` is deliberately **uncached** — see
+the exclusions table below.)
 
 **Client per-user (`scope:"user"`, 24h, catalog-* entity — per-user
 `isPurchased`/token overlay; flushed by admin writes AND by the buyer's own
@@ -180,7 +181,7 @@ Three traps this audit surfaced, all worth remembering:
 |---|---|
 | `client/my-subscriptions` (30s, user) | short TTL; entitlement writes already call `flushUserRouteCache` |
 | `client/notification/notifications/count` (15s, user) | short TTL, high write rate — tagging would flush constantly |
-| `client/app-version/check` (86400, shared) | **no admin writer exists** — the values come from `process.env` (`ANDROID_STORE_URL`, `IOS_APP_STORE_URL`, package name), so there is no route to hook. ⚠ Changing those env vars and restarting does NOT clear Redis: a force-update gate can stay stale for up to 24h. After changing them, run `POST /api/v1/admin/cache/flush`. |
+| `client/app-version/check` (**uncached**, 2026-09-07) | It is the force-update gate; product requirement is a fresh evaluation on every app launch. It was previously cached 24h/shared with no entity tag, so a new store version could stay invisible for up to a day. Removed; do not re-add `cacheRoute` here. |
 | `admin-dashboard` | documented above — aggregates live revenue; 2-min TTL is the accepted trade |
 
 Admin surfaces with writes but **no cached client read to invalidate** (verified,
