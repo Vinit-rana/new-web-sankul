@@ -17,6 +17,8 @@ import { computeDaysLeft } from "../../utils/planDuration";
 import { catalogCourseRepository as repo } from "./catalog-course.repository";
 import { listActivePricesByCourses } from "../commerce-price/commerce-price.service";
 import { listActiveForCoursesOrPlans } from "../commerce-subscription/commerce-subscription.service";
+import cache, { CacheDomain } from "../../libs/cache";
+import { CacheEntity } from "../../middlewares/flushGroups";
 import {
   toCourseCategoryWithCountDto,
   toCourseDto,
@@ -122,17 +124,34 @@ export const listCoursesWithPlans = async (
   const sortField = SORT_FIELD[opts.sortBy ?? "createdAt"];
   const dir = opts.sortOrder === "asc" ? "asc" : "desc";
 
-  const [rows, total] = await repo.paginateActiveCourses({
-    where: { isPopular: opts.isPopular, search: opts.search, categoryId: opts.categoryId },
-    orderBy: { field: sortField, dir },
-    skip,
-    take: limit,
+  // Course rows + their active plans are pure catalog data — identical for every
+  // caller of the same filter/sort/page. Only the isPurchased/daysLeft overlay
+  // below is per-customer, and that's ALWAYS computed live (never cached), so a
+  // purchase is reflected on the very next request with no flush needed for this
+  // endpoint at all. Tagged CacheEntity.CatalogCourse — the same tag admin course
+  // AND plan/price writes already flush via autoFlushGroup (see flushGroups.ts).
+  const { rows, total, plans } = await cache.aside({
+    key: cache.key(
+      CacheDomain.Client,
+      CacheEntity.CatalogCourse,
+      `list:${cache.hashFilter({ isPopular: opts.isPopular, search: opts.search, categoryId: opts.categoryId, sortField, dir, skip, limit })}`
+    ),
+    ttlSeconds: 60,
+    load: async () => {
+      const [rows, total] = await repo.paginateActiveCourses({
+        where: { isPopular: opts.isPopular, search: opts.search, categoryId: opts.categoryId },
+        orderBy: { field: sortField, dir },
+        skip,
+        take: limit,
+      });
+      const courseIds = rows.map((r) => r.id);
+      // Active plans for the page's courses, bucketed by course then by material.
+      const plans = courseIds.length ? await listActivePricesByCourses(courseIds) : [];
+      return { rows, total, plans };
+    },
   });
 
   const courseIds = rows.map((r) => r.id);
-
-  // Active plans for the page's courses, bucketed by course then by material.
-  const plans = courseIds.length ? await listActivePricesByCourses(courseIds) : [];
   const plansByCourse = new Map<string, { withMaterial: PriceDto[]; withoutMaterial: PriceDto[] }>();
   for (const p of plans) {
     const key = p.courseId ?? "";

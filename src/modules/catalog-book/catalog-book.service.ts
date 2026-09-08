@@ -12,10 +12,14 @@
  * data-only computed fields; the controller composes the cart/purchase state.
  * The per-request deep link is supplied by a `buildShareLink` callback.
  */
+import type { Book } from "@prisma/client";
 import { isNewItem } from "../../utils/isNew";
 import { getModuleTermsText } from "../terms/terms.service";
 import { catalogBookRepository as repo } from "./catalog-book.repository";
 import { toBookDto } from "./catalog-book.transformer";
+import { signMediaToken } from "../../utils/mediaToken";
+import cache, { CacheDomain } from "../../libs/cache";
+import { CacheEntity } from "../../middlewares/flushGroups";
 import type {
   BookDto,
   BookListItemDto,
@@ -57,27 +61,59 @@ const decorate = (
   shareableLink: buildShareLink(dto._id),
 });
 
-/** Single active book (data + computed fields), or null. */
+// ── Shared/live split ────────────────────────────────────────────────────────
+// Everything about a book row except `demoMediaToken` is customer-independent —
+// but that token IS customer-bound whenever a demo PDF exists (minted with the
+// caller's id, or a public `0` sentinel when anonymous — see toBookDto). It must
+// never be cached, same reasoning as catalog-ebook.service.ts's demoMediaToken/
+// bookMediaToken split. So the cached row omits it (and carries a `_hasDemoUrl`
+// flag instead), and the token is (re)minted fresh on every request.
+type BookSharedDto = Omit<BookDto, "demoMediaToken"> & { _rowId: number; _hasDemoUrl: boolean };
+
+const toBookSharedDto = (row: Book, fallbackTerms: string): BookSharedDto => {
+  const { demoMediaToken, ...rest } = toBookDto(row, { fallbackTerms });
+  void demoMediaToken; // minted with a cust:0 sentinel here (no customerId) — discarded, never cached
+  return { ...rest, _rowId: row.id, _hasDemoUrl: !!row.demo_url };
+};
+
+const mergeBookShared = (
+  shared: BookSharedDto,
+  buildShareLink: (bookId: string) => string,
+  now: Date,
+  customerId: number | null
+): BookListItemDto => {
+  const { _rowId, _hasDemoUrl, ...dto } = shared;
+  const demoMediaToken = _hasDemoUrl ? signMediaToken({ k: "bookDemo", id: _rowId, free: true, cust: customerId ?? 0 }) : null;
+  return decorate({ ...dto, demoMediaToken } as BookDto, buildShareLink, now);
+};
+
+/**
+ * Single active book (data + computed fields), or null. Shared data cached
+ * (CacheEntity.CatalogBook, already flushed by admin book writes); the
+ * customer-bound demoMediaToken is always minted live.
+ */
 export const getBookById = async (
   id: number,
   buildShareLink: (bookId: string) => string = (bid) => bid,
   now: Date = new Date(),
   customerId: number | null = null
 ): Promise<BookListItemDto | null> => {
-  const [row, fallbackTerms] = await Promise.all([
-    repo.findActiveById(id),
-    bookTermsFallback(),
-  ]);
-  return row
-    ? decorate(toBookDto(row, { customerId, fallbackTerms }), buildShareLink, now)
-    : null;
+  const shared = await cache.aside({
+    key: cache.key(CacheDomain.Client, CacheEntity.CatalogBook, `detail:${id}`),
+    ttlSeconds: 60,
+    load: async () => {
+      const [row, fallbackTerms] = await Promise.all([repo.findActiveById(id), bookTermsFallback()]);
+      return row ? toBookSharedDto(row, fallbackTerms) : null;
+    },
+  });
+  return shared ? mergeBookShared(shared, buildShareLink, now, customerId) : null;
 };
 
 /**
  * One page of active books (name/author search + language + `type` bucket) with
  * the data-only computed fields, plus the total for pagination. The caller
- * layers on cart `qty` + `isPurchased` from the (still-Mongo) order/cart tables
- * until those migrate.
+ * layers on cart `qty` + `isPurchased` from book-order (fully SQL — Phase 3b).
+ * Shared rows cached; demoMediaToken always minted live (see split above).
  */
 export const listBooksData = async (
   opts: ListBooksOptions = {},
@@ -90,16 +126,25 @@ export const listBooksData = async (
     language: opts.language,
     type: opts.type,
   };
-  const [rows, total, fallbackTerms] = await Promise.all([
-    repo.listActive({ ...filter, skip: opts.skip, take: opts.take }),
-    repo.countActive(filter),
-    bookTermsFallback(),
-  ]);
-  return {
-    items: rows.map((r) =>
-      decorate(toBookDto(r, { customerId, fallbackTerms }), buildShareLink, now)
+  const cached = await cache.aside({
+    key: cache.key(
+      CacheDomain.Client,
+      CacheEntity.CatalogBook,
+      `list:${cache.hashFilter({ ...filter, skip: opts.skip, take: opts.take })}`
     ),
-    total,
+    ttlSeconds: 60,
+    load: async () => {
+      const [rows, total, fallbackTerms] = await Promise.all([
+        repo.listActive({ ...filter, skip: opts.skip, take: opts.take }),
+        repo.countActive(filter),
+        bookTermsFallback(),
+      ]);
+      return { sharedRows: rows.map((r) => toBookSharedDto(r, fallbackTerms)), total };
+    },
+  });
+  return {
+    items: cached.sharedRows.map((s) => mergeBookShared(s, buildShareLink, now, customerId)),
+    total: cached.total,
   };
 };
 

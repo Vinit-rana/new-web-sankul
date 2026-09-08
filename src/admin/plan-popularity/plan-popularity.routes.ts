@@ -1,6 +1,7 @@
 import { Router } from "express";
 import authenticate, { requireRole } from "../../middlewares/authenticate";
 import { autoFlushGroup } from "../../middlewares/autoFlush";
+import { CacheEntity } from "../../middlewares/flushGroups";
 import { recomputeMostPopular } from "./plan-popularity.controller";
 
 const router = Router();
@@ -19,6 +20,6 @@ router.use(authenticate); // authz: catalog RBAC (enforceRbac) + router-level st
 // ws_test_series_price, whose is_most_popular surfaces in the cached client
 // test-series list/detail (those reads were untagged until the "test-series"
 // entity was added, which is why this comment previously read "not cached").
-router.post("/recompute", autoFlushGroup("plan", "live-course", "test-series"), recomputeMostPopular); // POST /api/v1/admin/plan-popularity/recompute
+router.post("/recompute", autoFlushGroup(CacheEntity.Plan, CacheEntity.LiveCourse, CacheEntity.TestSeries), recomputeMostPopular); // POST /api/v1/admin/plan-popularity/recompute
 
 export default router;

@@ -11,8 +11,8 @@
 //   - userId    — set by `authenticate` middleware after JWT verify
 //   - route     — the matched Express route template (filled at request end)
 //   - dbMs      — accumulated milliseconds spent in Mongo calls
-//   - cacheHit  — counter, incremented inside libs/cache.ts on each hit
-//   - cacheMiss — counter, incremented inside libs/cache.ts on each miss
+//   - cacheHit  — counter, incremented by libs/cache.ts and cacheRoute.ts on each hit
+//   - cacheMiss — counter, incremented by libs/cache.ts and cacheRoute.ts on each miss
 //
 // Logger reads this lazily via a Winston format so every log line gets
 // these fields automatically — no caller changes required.
@@ -30,7 +30,7 @@ export interface RequestContext {
   route?: string;
   /** Cumulative milliseconds spent in Mongo for this request. */
   dbMs: number;
-  /** Number of cache hits served from libs/cache.aside during this request. */
+  /** Number of cache hits served (libs/cache.ts aside-cache + cacheRoute.ts route-cache) during this request. */
   cacheHit: number;
   /** Number of cache misses that fell through to the loader. */
   cacheMiss: number;
@@ -62,7 +62,7 @@ export const getContext = (): RequestContext | undefined => storage.getStore();
  * Mutate the current context. Safe to call without a context (no-ops).
  * Used by:
  *   - authenticate middleware to set userId/userRole after JWT verify
- *   - libs/cache.ts to increment cacheHit/cacheMiss counters
+ *   - libs/cache.ts and middlewares/cacheRoute.ts to increment cacheHit/cacheMiss counters
  *   - mongoose middleware to accumulate dbMs
  */
 export const updateContext = (patch: Partial<RequestContext>): void => {

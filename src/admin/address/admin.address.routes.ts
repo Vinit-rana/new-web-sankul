@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { autoFlushGroup } from "../../middlewares/autoFlush";
+import { CacheEntity } from "../../middlewares/flushGroups";
 import authenticate, { requireRole } from "../../middlewares/authenticate";
 import { uploadS3 } from "../../middlewares/upload";
 
@@ -30,15 +31,15 @@ router.get("/states", getStates);
 // educations, characteristic). NOTE: "/cities" here is ws_customer_distict
 // (districts) — a DIFFERENT table from admin/offline's /cities
 // (ws_offline_city), which is why they carry different tags.
-router.post("/states", autoFlushGroup("customer-lookup"), createState);
-router.put("/states/:id", autoFlushGroup("customer-lookup"), updateState);
-router.delete("/states/:id", autoFlushGroup("customer-lookup"), deleteState);
+router.post("/states", autoFlushGroup(CacheEntity.CustomerLookup), createState);
+router.put("/states/:id", autoFlushGroup(CacheEntity.CustomerLookup), updateState);
+router.delete("/states/:id", autoFlushGroup(CacheEntity.CustomerLookup), deleteState);
 
 // ─── Cities ───────────────────────────────────────────────────────────────────
 router.get("/cities", listCities);
-router.post("/cities", autoFlushGroup("customer-lookup"), uploadS3.single("image"), createCity);
+router.post("/cities", autoFlushGroup(CacheEntity.CustomerLookup), uploadS3.single("image"), createCity);
 router.get("/cities/:id", getCity);
-router.put("/cities/:id", autoFlushGroup("customer-lookup"), uploadS3.single("image"), updateCity);
-router.delete("/cities/:id", autoFlushGroup("customer-lookup"), deleteCity);
+router.put("/cities/:id", autoFlushGroup(CacheEntity.CustomerLookup), uploadS3.single("image"), updateCity);
+router.delete("/cities/:id", autoFlushGroup(CacheEntity.CustomerLookup), deleteCity);
 
 export default router;

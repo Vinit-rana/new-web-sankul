@@ -2,7 +2,9 @@ import { Router } from "express";
 import authenticate, { requireRole } from "../../middlewares/authenticate";
 import { uploadS3Mixed, enforceMixedSizeLimits } from "../../middlewares/upload";
 import { autoFlushGroup, autoFlush } from "../../middlewares/autoFlush";
+import { CacheEntity } from "../../middlewares/flushGroups";
 import { cacheRoute } from "../../middlewares/cacheRoute";
+import { CACHE_TTL } from "../../config/cacheTtl";
 import {
   getBooks,
   getBookById,
@@ -34,21 +36,21 @@ const bookUploadFields = uploadS3Mixed.fields([
 ]);
 
 // Books CRUD
-// Writes call autoFlushGroup("book") so an edit (incl. price columns) instantly
+// Writes call autoFlushGroup(CacheEntity.Book) so an edit (incl. price columns) instantly
 // clears every cached read that embeds book data — book/catalog-book/dashboard/
 // exam-countdown AND the client cart (see flushGroups.ts). Otherwise a price
 // change would only surface after the cached read's TTL lapses.
-router.get("/", cacheRoute({ ttl: 86400, entity: "book" }), getBooks);
-router.post("/", bookUploadFields, enforceMixedSizeLimits, autoFlushGroup("book"), createBook);
-router.post("/reorder", autoFlushGroup("book"), reorderBooks);
+router.get("/", cacheRoute({ ttl: CACHE_TTL.DAY, entity: CacheEntity.Book }), getBooks);
+router.post("/", bookUploadFields, enforceMixedSizeLimits, autoFlushGroup(CacheEntity.Book), createBook);
+router.post("/reorder", autoFlushGroup(CacheEntity.Book), reorderBooks);
 router.get("/settings", getSettings);
 // Settings drives the free-shipping threshold used by the cart total → flush cart.
-router.put("/settings", autoFlush("cart"), updateSettings);
-router.get("/:id", cacheRoute({ ttl: 86400, entity: "book" }), getBookById);
-router.put("/:id", bookUploadFields, enforceMixedSizeLimits, autoFlushGroup("book"), updateBook);
-router.delete("/:id", autoFlushGroup("book"), deleteBook);
-router.patch("/:id/status", autoFlushGroup("book"), toggleBookStatus);
-router.patch("/:id/trending", autoFlushGroup("book"), toggleBookTrending);
+router.put("/settings", autoFlush(CacheEntity.Cart), updateSettings);
+router.get("/:id", cacheRoute({ ttl: CACHE_TTL.DAY, entity: CacheEntity.Book }), getBookById);
+router.put("/:id", bookUploadFields, enforceMixedSizeLimits, autoFlushGroup(CacheEntity.Book), updateBook);
+router.delete("/:id", autoFlushGroup(CacheEntity.Book), deleteBook);
+router.patch("/:id/status", autoFlushGroup(CacheEntity.Book), toggleBookStatus);
+router.patch("/:id/trending", autoFlushGroup(CacheEntity.Book), toggleBookTrending);
 
 // Orders
 router.get("/orders/list", getOrders);

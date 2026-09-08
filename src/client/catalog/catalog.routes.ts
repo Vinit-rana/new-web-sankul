@@ -1,6 +1,8 @@
 import { Router } from "express";
 import authenticate, { requireRole } from "../../middlewares/authenticate";
-import { cacheRoute } from "../../middlewares/cacheRoute";
+import { cacheRoute, CacheScope } from "../../middlewares/cacheRoute";
+import { CacheEntity } from "../../middlewares/flushGroups";
+import { CACHE_TTL } from "../../config/cacheTtl";
 import {
   getCatalogVideos,
   getCatalogMaterials,
@@ -16,8 +18,8 @@ router.use(authenticate, requireRole("customer"));
 // videos = Tier-3 (per-user progress + minted media tokens) → never cached.
 // materials = Tier-2 (isPurchased) → cached per-user + short TTL (ebook precedent).
 router.get("/:type/:id/videos", getCatalogVideos);       // ?search= ?categoryIds=a,b
-router.get("/:type/:id/materials", cacheRoute({ ttl: 86400, entity: "material", scope: "user" }), getCatalogMaterials);  // ?search=
+router.get("/:type/:id/materials", cacheRoute({ ttl: CACHE_TTL.DAY, entity: CacheEntity.Material, scope: CacheScope.User }), getCatalogMaterials);  // ?search=
 // Tier-1: tests tab is category-grouped counts only, no per-user state.
-router.get("/:type/:id/tests", cacheRoute({ ttl: 86400, entity: "categories", scope: "shared" }), getCatalogTests);
+router.get("/:type/:id/tests", cacheRoute({ ttl: CACHE_TTL.DAY, entity: CacheEntity.Categories, scope: CacheScope.Shared }), getCatalogTests);
 
 export default router;

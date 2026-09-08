@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { autoFlushGroup } from "../../middlewares/autoFlush";
+import { CacheEntity } from "../../middlewares/flushGroups";
 import authenticate, { requireRole } from "../../middlewares/authenticate";
 import { uploadS3 } from "../../middlewares/upload";
 import {
@@ -30,8 +31,8 @@ router.delete("/:id", deleteNotification);
 
 // ImageNotification CRUD (in-app banners)
 router.get("/images", listImageNotifications);
-router.post("/images", autoFlushGroup("image-notification"), uploadS3.single("image"), createImageNotification);
-router.put("/images/:id", autoFlushGroup("image-notification"), uploadS3.single("image"), updateImageNotification);
-router.delete("/images/:id", autoFlushGroup("image-notification"), deleteImageNotification);
+router.post("/images", autoFlushGroup(CacheEntity.ImageNotification), uploadS3.single("image"), createImageNotification);
+router.put("/images/:id", autoFlushGroup(CacheEntity.ImageNotification), uploadS3.single("image"), updateImageNotification);
+router.delete("/images/:id", autoFlushGroup(CacheEntity.ImageNotification), deleteImageNotification);
 
 export default router;

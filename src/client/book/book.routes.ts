@@ -1,6 +1,8 @@
 import { Router } from "express";
 import authenticate from "../../middlewares/authenticate";
-import { cacheRoute } from "../../middlewares/cacheRoute";
+import { cacheRoute, CacheScope } from "../../middlewares/cacheRoute";
+import { CacheEntity } from "../../middlewares/flushGroups";
+import { CACHE_TTL } from "../../config/cacheTtl";
 import {
   listBooks,
   listTrendingBooks,
@@ -17,11 +19,13 @@ import {
 const router = Router();
 
 // Catalogue — auth required so we can decorate with cart + isPurchased.
-// List + detail embed cart qty / isPurchased → Tier-2, cached per-user + short
-// TTL (ebook precedent). entity:"catalog-book" → admin book writes flush these.
-router.get("/", authenticate, cacheRoute({ ttl: 86400, entity: "catalog-book", scope: "user" }), listBooks);
+// listBooks / getBookDetail cache internally now (catalog-book.service.ts uses
+// cache.aside — shared data cached, cart qty/isPurchased/demoMediaToken always
+// live). Don't wrap these in an outer cacheRoute({ scope: CacheScope.User }) —
+// see course.routes.ts for why.
+router.get("/", authenticate, listBooks);
 // Tier-1: trending lists add only shareableLink — no per-user state.
-const TRENDING = { ttl: 86400, entity: "catalog-book" as const, scope: "shared" as const };
+const TRENDING = { ttl: CACHE_TTL.DAY, entity: CacheEntity.CatalogBook as const, scope: CacheScope.Shared as const };
 router.get("/trending", authenticate, cacheRoute(TRENDING), listTrendingBooks);
 router.get("/trending/books", authenticate, cacheRoute(TRENDING), listTrendingBooksOnly);
 router.get("/trending/ebooks", authenticate, cacheRoute(TRENDING), listTrendingEbooksOnly);
@@ -38,6 +42,6 @@ router.get("/orders/:id/tracking", authenticate, getMyOrderTracking);
 router.get("/orders/:id", authenticate, getMyOrderById);
 
 // Book detail — must be last so it doesn't match /cart, /shipping, /order etc.
-router.get("/:id", authenticate, cacheRoute({ ttl: 86400, entity: "catalog-book", scope: "user" }), getBookDetail);
+router.get("/:id", authenticate, getBookDetail);
 
 export default router;

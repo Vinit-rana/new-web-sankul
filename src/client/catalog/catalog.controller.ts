@@ -4,6 +4,8 @@ import { success, failure, getErrorMessage } from "../../utils/httpResponse";
 import { parseListQuery, buildPagination } from "../../utils/listQuery";
 import * as catSql from "../../modules/client-catalog/client-catalog.service";
 import { omit } from "../../utils/pick";
+import cache, { CacheDomain } from "../../libs/cache";
+import { CacheEntity } from "../../middlewares/flushGroups";
 
 // Recursively drop unused `progress.completedAt` / `progress.lastWatchedAt` from
 // catalog-video list items (flat course items carry `progress`; grouped course
@@ -76,7 +78,27 @@ export const getCatalogVideos = async (req: Request, res: Response) => {
       ? req.query.categoryIds.split(",").map((s) => catSql.parseCatId(s.trim())).filter((n): n is number => n != null)
       : null;
     const userNum = catSql.parseCatId(String(req.user?.id ?? ""));
-    const r = await catSql.catalogVideos({ type, id: idNum, customerId: userNum, search: search || null, categoryIds: catIds });
+    // catalogVideos() takes `customerId`, but for type=package|live-course it never
+    // reads it — see modules/client-catalog/client-catalog.service.ts: the only
+    // customerId-dependent branch (`if (opts.type === "course")`) returns early, so
+    // package/live-course never reach it. That means THIS response has zero
+    // per-user data for those two types (no progress, no token — just category
+    // folders + counts), unlike video-categories/:id/videos, so it's safe to cache
+    // the WHOLE result, shared across every caller (no customerId in the key).
+    // `type=course` DOES inline per-user progress + a customer-bound mediaToken
+    // per video row, so it stays uncached here, same as before.
+    // Tagged CacheEntity.Categories (not a new tag): both admin video writes AND
+    // admin video-category writes already flush "categories" as part of their
+    // existing flush group (see middlewares/flushGroups.ts), so this invalidates
+    // correctly with zero admin-route changes.
+    const r =
+      type === "course"
+        ? await catSql.catalogVideos({ type, id: idNum, customerId: userNum, search: search || null, categoryIds: catIds })
+        : await cache.aside({
+            key: cache.key(CacheDomain.Client, CacheEntity.Categories, `video-tabs:${type}:${idNum}:${cache.hashFilter({ search, catIds })}`),
+            ttlSeconds: 60,
+            load: () => catSql.catalogVideos({ type, id: idNum, customerId: null, search: search || null, categoryIds: catIds }),
+          });
     const msg = type === "course" ? "Videos fetched." : "Video categories fetched.";
     // Drop unused top-level `parent` + progress timestamps (docs/api-optimization).
     const paged = paginateCategories(req, r);

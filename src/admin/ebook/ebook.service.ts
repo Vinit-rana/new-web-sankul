@@ -6,7 +6,8 @@
 import { HttpError } from "../../middlewares/errorHandler";
 import { planInUseMessage } from "../../utils/planUsage";
 import { PLAN_TERMS_FROZEN_MESSAGE } from "../../modules/admin-plan/admin-plan.service";
-import cache from "../../libs/cache";
+import cache, { CacheDomain } from "../../libs/cache";
+import { CacheEntity } from "../../middlewares/flushGroups";
 import * as adminEbook from "../../modules/admin-ebook/admin-ebook.service";
 
 // Re-exported so the thin controllers can branch validation (numeric vs ObjectId).
@@ -20,14 +21,14 @@ const assertEbookSqlId = (id: string, label: string): number => {
   return n;
 };
 
-const ebookDetailKey = (id: string) => cache.key("admin", "ebook", `detail:${id}`);
+const ebookDetailKey = (id: string) => cache.key(CacheDomain.Admin, CacheEntity.Ebook, `detail:${id}`);
 
 const invalidateEbookCaches = async (ebookId?: string) => {
   const keys: string[] = [];
   if (ebookId) keys.push(ebookDetailKey(ebookId));
   await Promise.all([
     cache.invalidate(...keys),
-    cache.invalidateByPrefix(cache.keyPrefix("admin", "ebook", "list:")),
+    cache.invalidateByPrefix(cache.keyPrefix(CacheDomain.Admin, CacheEntity.Ebook, "list:")),
   ]);
 };
 

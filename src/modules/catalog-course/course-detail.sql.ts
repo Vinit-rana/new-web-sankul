@@ -26,6 +26,8 @@ import { listActiveForCoursesOrPlans } from "../commerce-subscription/commerce-s
 import { populateExamCountdowns } from "../exam-countdown/exam-countdown.service";
 import { examInCategoriesWhere } from "../catalog-exam/exam-category-pivot.where";
 import { byOrderThenCreatedAt } from "../../utils/catalogOrder";
+import cache, { CacheDomain } from "../../libs/cache";
+import { CacheEntity } from "../../middlewares/flushGroups";
 
 const sid = (n: number | null | undefined) => (n == null ? null : String(n));
 
@@ -46,10 +48,19 @@ const descendantCategoryIds = async (table: string, parentCol: string, rootId: n
   return rows.map((r) => Number(r.id));
 };
 
-export const buildCourseDetailsSql = async (
-  courseId: number,
-  customerId?: number
-): Promise<any | null> => {
+/**
+ * Everything about a course detail page that is IDENTICAL for every caller —
+ * course/subject/educator metadata, material/test category summaries + counts,
+ * plans, examCountdown attachments, and the video folder's row list (title/
+ * topic/etc, NOT progress). Cached — this is the expensive part (a dozen+
+ * queries) and none of it depends on who's asking.
+ *
+ * Deliberately EXCLUDES per-video `progress` and `isPurchased`/`daysLeft` —
+ * those are computed live in `buildCourseDetailsSql` below on every request,
+ * same reasoning as client/categories/categories.controller.ts's
+ * listVideosByCategory split.
+ */
+const buildCourseDetailsShared = async (courseId: number) => {
   const course = await prisma.course.findFirst({
     where: { id: courseId, status: true },
     include: {
@@ -61,11 +72,11 @@ export const buildCourseDetailsSql = async (
   });
   if (!course) return null;
 
-  const now = new Date();
   const { reachableCategoryIds } = await import("../catalog-category-tree/category-tree.service");
 
   // ── Videos: the course's root video folder + subtree count + direct list ──
-  const videos: any[] = [];
+  // (rows only — no progress; that's merged in live by the caller)
+  let videoBlock: { category: any; list: any[] } | null = null;
   if (course.videoCategoryId) {
     const videoCat = await prisma.videoCategory.findFirst({ where: { id: course.videoCategoryId } });
     if (videoCat) {
@@ -75,22 +86,8 @@ export const buildCourseDetailsSql = async (
         prisma.videoCategoryRelation.count({ where: { parent: videoCat.id } }),
         prisma.video.findMany({ where: { videoCategoryId: videoCat.id, status: true }, orderBy: [{ order: "asc" }, { created_at: "asc" }] }),
       ]);
-      let progByVideo = new Map<number, any>();
-      if (customerId && list.length) {
-        const rows = await prisma.lectureProgress.findMany({
-          where: { customerId, videoId: { in: list.map((v) => v.id) } },
-          select: { videoId: true, positionSec: true, durationSec: true, completed: true, completedAt: true, lastWatchedAt: true },
-        });
-        progByVideo = new Map(rows.map((r) => [r.videoId!, r]));
-      }
-      const listWithProgress = list.map((v) => {
-        const p = progByVideo.get(v.id);
-        return {
-          ...v, _id: String(v.id), videoCategoryId: sid(v.videoCategoryId),
-          progress: p ? { positionSec: p.positionSec ?? 0, durationSec: p.durationSec ?? 0, completed: !!p.completed, completedAt: p.completedAt ?? null, lastWatchedAt: p.lastWatchedAt ?? null } : null,
-        };
-      });
-      videos.push({ category: { ...videoCat, _id: String(videoCat.id), havingChildDirectory: childCount > 0, count }, list: listWithProgress });
+      const rows = list.map((v) => ({ ...v, _id: String(v.id), videoCategoryId: sid(v.videoCategoryId) }));
+      videoBlock = { category: { ...videoCat, _id: String(videoCat.id), havingChildDirectory: childCount > 0, count }, list: rows };
     }
   }
 
@@ -144,7 +141,73 @@ export const buildCourseDetailsSql = async (
     withoutMaterial: allPlans.filter((p) => p.withMaterial === false),
   };
 
-  // ── Subscription → isPurchased + daysLeft ──
+  // ── Embedded examCountdown attachments (C6): populate the row's JSON int[]
+  // columns to the Mongo .populate() shape, order preserved. ──
+  const ec = await populateExamCountdowns(course as any);
+
+  const courseDto: any = {
+    ...course,
+    _id: String(course.id),
+    subject: course.subject ? { ...course.subject, _id: String(course.subject.id) } : null,
+    educator: course.educator ? { ...course.educator, _id: String(course.educator.id) } : null,
+    examCountdownIds: ec.examCountdownIds,
+    examCountdownCategoryIds: ec.examCountdownCategoryIds,
+  };
+  delete courseDto.materialCategoryCourse;
+  delete courseDto.examCategoryCourse;
+  delete courseDto.courseSubjectCategoryId;
+  // Legacy single field dropped on the SQL course detail (mirrors Mongo path).
+  delete courseDto.examCountdownCategoryId;
+
+  return {
+    course: courseDto,
+    scope: { kind: "course", id: String(course.id) },
+    videoBlock,
+    materials,
+    tests,
+    plans,
+    allPlans,
+  };
+};
+
+export const buildCourseDetailsSql = async (
+  courseId: number,
+  customerId?: number
+): Promise<any | null> => {
+  const now = new Date();
+
+  // Tagged CacheEntity.CatalogCourse — already flushed by admin course writes AND
+  // by plan/price writes (see flushGroups.ts), same as the course-list cache.
+  const shared = await cache.aside({
+    key: cache.key(CacheDomain.Client, CacheEntity.CatalogCourse, `detail:${courseId}`),
+    ttlSeconds: 60,
+    load: () => buildCourseDetailsShared(courseId),
+  });
+  if (!shared) return null;
+  const { course, scope, videoBlock, materials, tests, plans, allPlans } = shared;
+
+  // ── Per-video progress — always live, merged onto the cached row list ──
+  const videos: any[] = [];
+  if (videoBlock) {
+    let progByVideo = new Map<number, any>();
+    if (customerId && videoBlock.list.length) {
+      const rows = await prisma.lectureProgress.findMany({
+        where: { customerId, videoId: { in: videoBlock.list.map((v: any) => v.id) } },
+        select: { videoId: true, positionSec: true, durationSec: true, completed: true, completedAt: true, lastWatchedAt: true },
+      });
+      progByVideo = new Map(rows.map((r) => [r.videoId!, r]));
+    }
+    const listWithProgress = videoBlock.list.map((v: any) => {
+      const p = progByVideo.get(v.id);
+      return {
+        ...v,
+        progress: p ? { positionSec: p.positionSec ?? 0, durationSec: p.durationSec ?? 0, completed: !!p.completed, completedAt: p.completedAt ?? null, lastWatchedAt: p.lastWatchedAt ?? null } : null,
+      };
+    });
+    videos.push({ category: videoBlock.category, list: listWithProgress });
+  }
+
+  // ── Subscription → isPurchased + daysLeft — always live ──
   let isPurchased = false;
   let daysLeft: number | null = null;
   if (customerId) {
@@ -162,29 +225,9 @@ export const buildCourseDetailsSql = async (
     }
   }
 
-  // ── Embedded examCountdown attachments (C6): populate the row's JSON int[]
-  // columns to the Mongo .populate() shape, order preserved. ──
-  const ec = await populateExamCountdowns(course as any);
-
-  const courseDto: any = {
-    ...course,
-    _id: String(course.id),
-    subject: course.subject ? { ...course.subject, _id: String(course.subject.id) } : null,
-    educator: course.educator ? { ...course.educator, _id: String(course.educator.id) } : null,
-    isPurchased,
-    daysLeft,
-    examCountdownIds: ec.examCountdownIds,
-    examCountdownCategoryIds: ec.examCountdownCategoryIds,
-  };
-  delete courseDto.materialCategoryCourse;
-  delete courseDto.examCategoryCourse;
-  delete courseDto.courseSubjectCategoryId;
-  // Legacy single field dropped on the SQL course detail (mirrors Mongo path).
-  delete courseDto.examCountdownCategoryId;
-
   return {
-    course: courseDto,
-    scope: { kind: "course", id: String(course.id) },
+    course: { ...course, isPurchased, daysLeft },
+    scope,
     videos,
     materials,
     tests,

@@ -1,4 +1,6 @@
 import { Request, Response } from "express";
+import cache, { CacheDomain } from "../../libs/cache";
+import { CacheEntity } from "../../middlewares/flushGroups";
 import * as cvSql from "../../modules/client-category-video/client-category-video.service";
 import * as clientMatSql from "../../modules/client-material/client-material.service";
 import * as clientExamSql from "../../modules/client-exam/client-exam.service";
@@ -68,10 +70,24 @@ export const listVideosByCategory = async (req: Request, res: Response) => {
     const typeQ = String(req.query.type ?? "").toLowerCase();
     const priceType = typeQ === "free" || typeQ === "paid" ? (typeQ as "free" | "paid") : null;
 
-    const [{ rows, total }, scopes] = await Promise.all([
-      cvSql.listVideos({ categoryId: catId, search: search || null, priceType, skip, limitNum }),
-      cvSql.scopesForCategory(catId),
-    ]);
+    // The full response is deliberately NEVER route-cached (see categories.routes.ts)
+    // because it embeds live per-user progress/notes + a short-lived customer-bound
+    // mediaToken. But the video LIST + owning-scope lookup below is pure catalog data
+    // — identical for every caller of this category/page/filter — so cache just that
+    // slice with a short cache-aside TTL. The per-user overlay (progress, notes,
+    // entitlement, token) below is always computed fresh, every request. Tagged
+    // CacheEntity.Video (not a bespoke tag) so admin video writes — which already
+    // call autoFlushGroup(CacheEntity.Video) — invalidate this too; see
+    // libs/cache.ts's invalidateEntity, wired into middlewares/autoFlush.ts.
+    const [{ rows, total }, scopes] = await cache.aside({
+      key: cache.key(CacheDomain.Client, CacheEntity.Video, `${catId}:${cache.hashFilter({ search, priceType, skip, limitNum })}`),
+      ttlSeconds: 60,
+      load: () =>
+        Promise.all([
+          cvSql.listVideos({ categoryId: catId, search: search || null, priceType, skip, limitNum }),
+          cvSql.scopesForCategory(catId),
+        ]),
+    });
     // Representative owning container for the response `scope` field (course→live→package
     // priority; back-compat with the old single-scope shape).
     const scope = scopes[0] ?? null;

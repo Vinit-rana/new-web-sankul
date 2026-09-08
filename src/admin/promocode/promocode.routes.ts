@@ -1,6 +1,8 @@
 import { Router } from "express";
 import authenticate, { requireRole } from "../../middlewares/authenticate";
 import { cacheRoute } from "../../middlewares/cacheRoute";
+import { CacheEntity } from "../../middlewares/flushGroups";
+import { CACHE_TTL } from "../../config/cacheTtl";
 import { autoFlushGroup } from "../../middlewares/autoFlush";
 import {
   getPromocodes,
@@ -20,13 +22,13 @@ router.use(authenticate); // authz: catalog RBAC (enforceRbac) + router-level st
 
 // Route-level response cache + autoFlushGroup on writes (see docs/CACHING.md).
 router.get("/plans", getPromocodePlans);
-router.get("/", cacheRoute({ ttl: 86400, entity: "promo-code" }), getPromocodes);
-router.post("/", autoFlushGroup("promo-code"), createPromocode);
-router.post("/bulk-status", autoFlushGroup("promo-code"), bulkStatus);
-router.post("/bulk-delete", autoFlushGroup("promo-code"), bulkDelete);
-router.get("/:id", cacheRoute({ ttl: 86400, entity: "promo-code" }), getPromocodeById);
-router.put("/:id", autoFlushGroup("promo-code"), updatePromocode);
-router.delete("/:id", autoFlushGroup("promo-code"), deletePromocode);
-router.patch("/:id/status", autoFlushGroup("promo-code"), togglePromocodeStatus);
+router.get("/", cacheRoute({ ttl: CACHE_TTL.DAY, entity: CacheEntity.PromoCode }), getPromocodes);
+router.post("/", autoFlushGroup(CacheEntity.PromoCode), createPromocode);
+router.post("/bulk-status", autoFlushGroup(CacheEntity.PromoCode), bulkStatus);
+router.post("/bulk-delete", autoFlushGroup(CacheEntity.PromoCode), bulkDelete);
+router.get("/:id", cacheRoute({ ttl: CACHE_TTL.DAY, entity: CacheEntity.PromoCode }), getPromocodeById);
+router.put("/:id", autoFlushGroup(CacheEntity.PromoCode), updatePromocode);
+router.delete("/:id", autoFlushGroup(CacheEntity.PromoCode), deletePromocode);
+router.patch("/:id/status", autoFlushGroup(CacheEntity.PromoCode), togglePromocodeStatus);
 
 export default router;

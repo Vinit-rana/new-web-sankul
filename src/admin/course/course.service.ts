@@ -8,7 +8,8 @@
 import { HttpError } from "../../middlewares/errorHandler";
 import { planInUseMessage } from "../../utils/planUsage";
 import { PLAN_TERMS_FROZEN_MESSAGE } from "../../modules/admin-plan/admin-plan.service";
-import cache from "../../libs/cache";
+import cache, { CacheDomain } from "../../libs/cache";
+import { CacheEntity } from "../../middlewares/flushGroups";
 import logger from "../../utils/logger";
 import * as adminCourse from "../../modules/admin-course/admin-course.service";
 
@@ -51,7 +52,7 @@ export interface ListCoursesQuery {
 // Helpers
 // ──────────────────────────────────────────────────────────────────────────────
 
-const courseDetailKey = (id: string) => cache.key("admin", "course", `detail:${id}`);
+const courseDetailKey = (id: string) => cache.key(CacheDomain.Admin, CacheEntity.Course, `detail:${id}`);
 
 const invalidateCourseCaches = async (courseId?: string) => {
   const keys: string[] = [];
@@ -59,7 +60,7 @@ const invalidateCourseCaches = async (courseId?: string) => {
   await Promise.all([
     cache.invalidate(...keys),
     // List cache is partitioned by filter hash; sweep the prefix.
-    cache.invalidateByPrefix(cache.keyPrefix("admin", "course", "list:")),
+    cache.invalidateByPrefix(cache.keyPrefix(CacheDomain.Admin, CacheEntity.Course, "list:")),
   ]);
 };
 

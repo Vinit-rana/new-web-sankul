@@ -7,7 +7,7 @@
  */
 import logger from "../../utils/logger";
 import { flushEntity } from "../../middlewares/autoFlush";
-import { resolveFlushGroup } from "../../middlewares/flushGroups";
+import { CacheEntity, resolveFlushGroup } from "../../middlewares/flushGroups";
 import { recomputeAllPopularity } from "./plan-popularity.service";
 
 const REFRESH_HOURS = Number(process.env.PLAN_POPULARITY_REFRESH_HOURS) || 24;
@@ -28,12 +28,12 @@ async function runOnce(): Promise<void> {
     const total = Object.values(changed).reduce((a, b) => a + b, 0);
     if (total > 0) {
       const entities = [...new Set([
-        ...resolveFlushGroup("plan"),
-        ...resolveFlushGroup("live-course"),
+        ...resolveFlushGroup(CacheEntity.Plan),
+        ...resolveFlushGroup(CacheEntity.LiveCourse),
         // ws_test_series_price is one of the five popularity scopes, and the
         // client test-series reads ARE cached (tagged "test-series"), so the
         // badge needs the same sweep as the other four.
-        ...resolveFlushGroup("test-series"),
+        ...resolveFlushGroup(CacheEntity.TestSeries),
       ])];
       const cleared = await flushEntity(...entities);
       logger.info("[plan-popularity] flushed route cache after recompute", { changedRows: total, cleared });

@@ -1,6 +1,8 @@
 import { Router } from "express";
 import authenticate from "../../middlewares/authenticate";
-import { cacheRoute } from "../../middlewares/cacheRoute";
+import { cacheRoute, CacheScope } from "../../middlewares/cacheRoute";
+import { CacheEntity } from "../../middlewares/flushGroups";
+import { CACHE_TTL } from "../../config/cacheTtl";
 import {
   listCategories,
   listExamsByCategory,
@@ -28,12 +30,12 @@ const router = Router();
 router.use(authenticate);
 
 // Discovery — Tier-1: exam categories carry no per-user state.
-router.get("/categories", cacheRoute({ ttl: 86400, entity: "catalog-exam", scope: "shared" }), listCategories);
+router.get("/categories", cacheRoute({ ttl: CACHE_TTL.DAY, entity: CacheEntity.CatalogExam, scope: CacheScope.Shared }), listCategories);
 // Tier-2 (embeds isCompleted/lastResult) → cached per-user + short TTL (ebook
-// precedent), entity:"catalog-exam" (admin exam writes flush it). Attempt/detail/
+// precedent), entity: CacheEntity.CatalogExam (admin exam writes flush it). Attempt/detail/
 // solution/history routes below are per-attempt and stay uncached.
-router.get("/categories/:categoryId/exams", cacheRoute({ ttl: 86400, entity: "catalog-exam", scope: "user" }), listExamsByCategory);
-router.get("/daily", cacheRoute({ ttl: 86400, entity: "catalog-exam", scope: "user" }), getDailyExams);
+router.get("/categories/:categoryId/exams", cacheRoute({ ttl: CACHE_TTL.DAY, entity: CacheEntity.CatalogExam, scope: CacheScope.User }), listExamsByCategory);
+router.get("/daily", cacheRoute({ ttl: CACHE_TTL.DAY, entity: CacheEntity.CatalogExam, scope: CacheScope.User }), getDailyExams);
 
 // My history / analytics
 router.get("/my/attempts", listMyResults);

@@ -2,6 +2,7 @@ import { Router } from "express";
 import authenticate, { requireRole } from "../../middlewares/authenticate";
 import { uploadS3 } from "../../middlewares/upload";
 import { autoFlushGroup } from "../../middlewares/autoFlush";
+import { CacheEntity } from "../../middlewares/flushGroups";
 import {
   listTestSeries,
   getTestSeriesById,
@@ -35,14 +36,14 @@ const router = Router();
 router.use(authenticate); // authz: catalog RBAC (enforceRbac) + router-level staff gate
 
 // --- Literal-prefix routes first so they don't collide with /:id patterns ----
-router.put("/content-categories/:categoryId",       autoFlushGroup("test-series"), uploadS3.single("icon"), updateContentCategory);
-router.delete("/content-categories/:categoryId",    autoFlushGroup("test-series"), deleteContentCategory);
+router.put("/content-categories/:categoryId",       autoFlushGroup(CacheEntity.TestSeries), uploadS3.single("icon"), updateContentCategory);
+router.delete("/content-categories/:categoryId",    autoFlushGroup(CacheEntity.TestSeries), deleteContentCategory);
 
-router.put("/papers/:linkId",                       autoFlushGroup("test-series"), updatePaperLink);
-router.delete("/papers/:linkId",                    autoFlushGroup("test-series"), unlinkPaper);
+router.put("/papers/:linkId",                       autoFlushGroup(CacheEntity.TestSeries), updatePaperLink);
+router.delete("/papers/:linkId",                    autoFlushGroup(CacheEntity.TestSeries), unlinkPaper);
 
-router.put("/prices/:priceId",                      autoFlushGroup("test-series"), updatePrice);
-router.delete("/prices/:priceId",                   autoFlushGroup("test-series"), deletePrice);
+router.put("/prices/:priceId",                      autoFlushGroup(CacheEntity.TestSeries), updatePrice);
+router.delete("/prices/:priceId",                   autoFlushGroup(CacheEntity.TestSeries), deletePrice);
 
 // Subscription writes deliberately carry NO autoFlushGroup: they change one
 // CUSTOMER's entitlement (isPurchased / activeSubscription), not the shared
@@ -60,20 +61,20 @@ router.get("/orders",                               listOrders);
 
 // --- Test Series CRUD -------------------------------------------------------
 router.get("/",                                     listTestSeries);
-router.post("/",                                    autoFlushGroup("test-series"), uploadS3.single("thumbnail"), createTestSeries);
+router.post("/",                                    autoFlushGroup(CacheEntity.TestSeries), uploadS3.single("thumbnail"), createTestSeries);
 router.get("/:id",                                  getTestSeriesById);
-router.put("/:id",                                  autoFlushGroup("test-series"), uploadS3.single("thumbnail"), updateTestSeries);
-router.delete("/:id",                               autoFlushGroup("test-series"), deleteTestSeries);
+router.put("/:id",                                  autoFlushGroup(CacheEntity.TestSeries), uploadS3.single("thumbnail"), updateTestSeries);
+router.delete("/:id",                               autoFlushGroup(CacheEntity.TestSeries), deleteTestSeries);
 
 // --- Nested under a series --------------------------------------------------
 router.get("/:id/content-categories",               listContentCategories);
-router.post("/:id/content-categories",              autoFlushGroup("test-series"), uploadS3.single("icon"), createContentCategory);
+router.post("/:id/content-categories",              autoFlushGroup(CacheEntity.TestSeries), uploadS3.single("icon"), createContentCategory);
 
 router.get("/:id/papers",                           listPapers);
-router.post("/:id/papers",                          autoFlushGroup("test-series"), linkPaper);
+router.post("/:id/papers",                          autoFlushGroup(CacheEntity.TestSeries), linkPaper);
 
 router.get("/:id/prices",                           listPrices);
-router.post("/:id/prices",                          autoFlushGroup("test-series"), createPrice);
+router.post("/:id/prices",                          autoFlushGroup(CacheEntity.TestSeries), createPrice);
 
 router.post("/:id/grant",                           grantSubscription);
 

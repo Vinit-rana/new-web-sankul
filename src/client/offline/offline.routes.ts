@@ -1,6 +1,8 @@
 import { Router } from "express";
 import authenticate, { requireRole, optionalAuthenticate } from "../../middlewares/authenticate";
-import { cacheRoute } from "../../middlewares/cacheRoute";
+import { cacheRoute, CacheScope } from "../../middlewares/cacheRoute";
+import { CacheEntity } from "../../middlewares/flushGroups";
+import { CACHE_TTL } from "../../config/cacheTtl";
 import {
   getOfflineDashboard,
   // listCities,            // moved to /api/v1/client/address/cities
@@ -25,7 +27,7 @@ router.get("/", getOfflineDashboard);
 // dedicated entity tag → "misc", medium TTL. The dashboard "/" is per-user (uncached).
 // Shared (identical for every customer) + entity-tagged, so admin centre/batch/
 // city writes sweep these immediately instead of leaving them for the 24h TTL.
-const OFFLINE = { ttl: 86400, entity: "offline" as const, scope: "shared" as const };
+const OFFLINE = { ttl: CACHE_TTL.DAY, entity: CacheEntity.Offline as const, scope: CacheScope.Shared as const };
 
 router.get("/centers", authenticate, requireRole("customer"), cacheRoute(OFFLINE), listCenters);
 router.get("/batches", authenticate, requireRole("customer"), cacheRoute(OFFLINE), listBatches);

@@ -12,12 +12,14 @@ import {
 import {
   buildPackageDetailSql,
   enrichPackagesSql,
+  listPackagesCached,
   listPackagesPaginatedSql,
   listPackagesByTypeSql,
   listPackagesByGoalLabelSql,
   listPackagesByGoalLabelScopedSql,
   listPackagesByGoalIndividualSql,
 } from "../../modules/catalog-package/catalog-package.detail.sql";
+import cache from "../../libs/cache";
 import { listActiveSubscriptionsByCustomer } from "../../modules/commerce-subscription/commerce-subscription.service";
 import { prisma as prismaPkg } from "../../config/prisma";
 import { listChatMessagesMysql } from "../../modules/package-chat/package-chat.service";
@@ -78,7 +80,7 @@ export const listPackages = async (req: Request, res: Response) => {
     const skip = (pageNum - 1) * limitNum;
 
     const cid = req.user?.id ? Number(req.user.id) : null;
-    const { rows, total: totalSql } = await listPackagesPaginatedSql({
+    const filter = {
       search: search?.trim() || undefined,
       isPopular: isPopular === "true" ? true : isPopular === "false" ? false : undefined,
       isPaid: type === "paid" ? true : type === "free" ? false : undefined,
@@ -86,8 +88,13 @@ export const listPackages = async (req: Request, res: Response) => {
       goalId: goalId && /^\d+$/.test(goalId) ? Number(goalId) : undefined,
       skip,
       take: limitNum,
-    });
-    const dataSql = await enrichPackagesSql(rows, Number.isInteger(cid) ? cid : null, resolveBase(req));
+    };
+    const { total: totalSql, data: dataSql } = await listPackagesCached(
+      `list:${cache.hashFilter(filter)}`,
+      () => listPackagesPaginatedSql(filter),
+      Number.isInteger(cid) ? cid : null,
+      resolveBase(req)
+    );
     // Drop FE-unused FK/meta fields from each card (see docs/api-optimization).
     const slimData = omitList(dataSql, ["goalLabelId", "active", "pcMaterialId", "examId", "packageTypeId", "goalId", "order"]);
     logger.info("listPackages success (mysql)", { traceId, total: totalSql, returned: dataSql.length });
@@ -112,8 +119,13 @@ export const listPackagesByType = async (req: Request, res: Response) => {
     if (!tid) { logger.warn("listPackagesByType invalid id (mysql)", { traceId, typeId }); return res.status(400).json({ success: false, message: "Invalid type id." }); }
     const cid = req.user?.id ? Number(req.user.id) : null;
     const { search, page, limit, skip } = parseListQuery(req.query);
-    const { rows, total } = await listPackagesByTypeSql(tid, { search, skip, take: limit });
-    const enrichedSql = await enrichPackagesSql(rows, Number.isInteger(cid) ? cid : null, resolveBase(req));
+    const listOpts = { search, skip, take: limit };
+    const { total, data: enrichedSql } = await listPackagesCached(
+      `by-type:${tid}:${cache.hashFilter(listOpts)}`,
+      () => listPackagesByTypeSql(tid, listOpts),
+      Number.isInteger(cid) ? cid : null,
+      resolveBase(req)
+    );
     logger.info("listPackagesByType success (mysql)", { traceId, typeId, count: enrichedSql.length, total });
     return res.status(200).json({ success: true, data: enrichedSql, pagination: buildPagination(total, page, limit) });
   } catch (error: any) {

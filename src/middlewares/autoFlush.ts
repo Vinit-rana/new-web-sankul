@@ -5,11 +5,11 @@
 // cached reads for that entity so the next GET returns fresh data — with NO
 // changes to controllers or services.
 //
-//   router.get("/",     cacheRoute({ ttl: 120, entity: "ebook" }), getEbooks);
-//   router.get("/:id",  cacheRoute({ ttl: 600, entity: "ebook" }), getEbookById);
-//   router.post("/",    autoFlush("ebook"), createEbook);
-//   router.put("/:id",  autoFlush("ebook"), updateEbook);
-//   router.delete("/:id", autoFlush("ebook"), deleteEbook);
+//   router.get("/",     cacheRoute({ ttl: 120, entity: CacheEntity.Ebook }), getEbooks);
+//   router.get("/:id",  cacheRoute({ ttl: 600, entity: CacheEntity.Ebook }), getEbookById);
+//   router.post("/",    autoFlush(CacheEntity.Ebook), createEbook);
+//   router.put("/:id",  autoFlush(CacheEntity.Ebook), updateEbook);
+//   router.delete("/:id", autoFlush(CacheEntity.Ebook), deleteEbook);
 //
 // Semantics (entity-wide):
 //   - On a 2xx response, clear EVERY cached read tagged with this entity
@@ -31,11 +31,12 @@ import type { Request, Response, NextFunction } from "express";
 import { redisClient, isRedisReady } from "../config/redis";
 import { entityCachePrefix, ROUTE_CACHE_PREFIX } from "./cacheRoute";
 import { resolveFlushGroup, type CacheEntity } from "./flushGroups";
+import cache from "../libs/cache";
 import logger from "../utils/logger";
 
 const CACHE_DEBUG = process.env.CACHE_DEBUG === "true";
 
-const sweepEntity = async (entity: string): Promise<number> => {
+const sweepEntity = async (entity: CacheEntity): Promise<number> => {
   const prefix = `${entityCachePrefix(entity)}:`;
   let cursor = "0";
   let deleted = 0;
@@ -50,6 +51,11 @@ const sweepEntity = async (entity: string): Promise<number> => {
     cursor = next;
     if (batch.length) deleted += await redisClient.del(...batch);
   } while (cursor !== "0");
+  // Also sweep any `cache.aside` (libs/cache.ts) entries tagged with this
+  // entity — a second, lower-level cache namespace controllers use directly
+  // (see client/categories/categories.controller.ts). One flush call clears
+  // both layers so a write route never has to know which layer cached what.
+  deleted += await cache.invalidateEntity(entity);
   return deleted;
 };
 
@@ -60,7 +66,7 @@ const sweepEntity = async (entity: string): Promise<number> => {
  *
  *   import { flushEntity } from "../../middlewares/autoFlush";
  *   await adminEbook.setUploadStatus(id, "completed");
- *   await flushEntity("ebook");   // keep the route cache honest
+ *   await flushEntity(CacheEntity.Ebook);   // keep the route cache honest
  *
  * Fail-open: a Redis error is logged and swallowed. Returns the number of keys
  * cleared (0 if cache is unavailable).
@@ -151,7 +157,7 @@ export const autoFlush = (...entities: CacheEntity[]) => {
  * entity list — so one admin write clears both its own cache AND every client
  * cache that embeds its data. Prefer this on admin write routes.
  *
- *   router.put("/:id", autoFlushGroup("ebook"), updateEbook);
+ *   router.put("/:id", autoFlushGroup(CacheEntity.Ebook), updateEbook);
  *   // → flushes ebook, catalog-ebook, client-dashboard, free, exam-countdown
  *
  * Accepts multiple groups (deduped) for writes that span concerns.

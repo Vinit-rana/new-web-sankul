@@ -25,6 +25,8 @@ import { listActivePricesByPackage } from "../commerce-price/commerce-price.serv
 import { getActivePackageSubscription } from "../commerce-subscription/commerce-subscription.service";
 import { appliesToGroups } from "../promo-code/promo-code.service";
 import { examInCategoriesWhere } from "../catalog-exam/exam-category-pivot.where";
+import cache, { CacheDomain } from "../../libs/cache";
+import { CacheEntity } from "../../middlewares/flushGroups";
 
 const descendantIds = async (table: string, parentCol: string, rootId: number): Promise<number[]> => {
   const rows = await prisma.$queryRawUnsafe<{ id: number }[]>(
@@ -131,11 +133,18 @@ const populateGoal = async (id: number | null) => {
 };
 
 // ── detail ───────────────────────────────────────────────────────────────────
-export const buildPackageDetailSql = async (packageId: number, customerId: number | null, baseUrl?: string) => {
+// Everything below is customer-independent — video/material/test groups (with
+// their counts), plans, promo codes, packageType/goal populates. Cached.
+// isPurchased/daysLeft is the ONLY per-customer field and is always computed
+// live by buildPackageDetailSql, never cached — see catalog-course's identical
+// split (course-detail.sql.ts) for the full reasoning, including the live
+// route-cache pitfall to avoid (package.routes.ts must not wrap this in an
+// outer cacheRoute({ scope: CacheScope.User }) either).
+const buildPackageDetailShared = async (packageId: number) => {
   const pkg = await prisma.package.findFirst({ where: { id: packageId, active: true } });
   if (!pkg) return null;
 
-  const [videos, materials, tests, plans, availablePromoCode, packageType, goal, activeSub] = await Promise.all([
+  const [videos, materials, tests, plans, availablePromoCode, packageType, goal] = await Promise.all([
     videoGroups(packageId),
     materialGroups(packageId),
     examGroups(packageId),
@@ -143,9 +152,31 @@ export const buildPackageDetailSql = async (packageId: number, customerId: numbe
     availablePromo(packageId),
     populatePackageType(pkg.packageTypeId),
     populateGoal(pkg.goalId),
-    customerId ? getActivePackageSubscription(customerId, packageId) : Promise.resolve(null),
   ]);
 
+  return {
+    scope: { kind: "package", id: String(pkg.id) },
+    pkg,
+    packageType,
+    goal,
+    videos,
+    materials,
+    tests,
+    plans,
+    availablePromoCode,
+  };
+};
+
+export const buildPackageDetailSql = async (packageId: number, customerId: number | null, baseUrl?: string) => {
+  const shared = await cache.aside({
+    key: cache.key(CacheDomain.Client, CacheEntity.CatalogPackage, `detail:${packageId}`),
+    ttlSeconds: 60,
+    load: () => buildPackageDetailShared(packageId),
+  });
+  if (!shared) return null;
+  const { pkg, packageType, goal, videos, materials, tests, plans, availablePromoCode } = shared;
+
+  const activeSub = customerId ? await getActivePackageSubscription(customerId, packageId) : null;
   const isPurchased = !!activeSub;
   const daysLeft = isPurchased ? computeDaysLeft(activeSub?.endAt ?? null) : null;
 
@@ -178,18 +209,18 @@ export const buildPackageDetailSql = async (packageId: number, customerId: numbe
 };
 
 // ── list enrichment ──────────────────────────────────────────────────────────
-export const enrichPackagesSql = async (rows: Package[], customerId: number | null, baseUrl?: string) => {
-  const now = new Date();
+// Shared, per-package enrichment (plans/subscriberCount/packageType/goal) — no
+// customerId. `shareableLink` is derived from `baseUrl` (request-dependent) so
+// it's deliberately NOT included here; callers add it after the cache read.
+const enrichPackagesShared = async (rows: Package[]) => {
   return Promise.all(
     rows.map(async (p) => {
-      const [plans, subCount, packageTypeId, goalId, activeSub] = await Promise.all([
+      const [plans, subCount, packageTypeId, goalId] = await Promise.all([
         splitPlans(p.id),
         prisma.packageCourseSubscription.count({ where: { packageId: p.id, status: true } }),
         populatePackageType(p.packageTypeId),
         populateGoal(p.goalId),
-        customerId ? getActivePackageSubscription(customerId, p.id, now) : Promise.resolve(null),
       ]);
-      const isPurchased = !!activeSub;
       return {
         _id: String(p.id),
         name: p.name,
@@ -211,9 +242,63 @@ export const enrichPackagesSql = async (rows: Package[], customerId: number | nu
         updatedAt: p.updated_at ?? null,
         plans,
         subscriberCount: subCount,
+      };
+    })
+  );
+};
+
+/**
+ * Cached list+enrich wrapper shared by every `list*Sql` variant below: fetch
+ * the filtered page of packages + their shared enrichment as ONE cached unit
+ * (keyed by `cacheKeyId`, which each caller builds from its own filter args),
+ * then merge live per-customer isPurchased/daysLeft + the request's
+ * shareableLink on top. Tagged CacheEntity.CatalogPackage — already flushed by
+ * admin package/plan/price writes (see flushGroups.ts).
+ */
+export const listPackagesCached = async (
+  cacheKeyId: string,
+  fetchRows: () => Promise<{ rows: Package[]; total: number }>,
+  customerId: number | null,
+  baseUrl?: string
+): Promise<{ rows: Package[]; total: number; data: any[] }> => {
+  const { rows, total, shared } = await cache.aside({
+    key: cache.key(CacheDomain.Client, CacheEntity.CatalogPackage, cacheKeyId),
+    ttlSeconds: 60,
+    load: async () => {
+      const { rows, total } = await fetchRows();
+      const shared = await enrichPackagesShared(rows);
+      return { rows, total, shared };
+    },
+  });
+
+  const now = new Date();
+  const data = await Promise.all(
+    shared.map(async (item, i) => {
+      const activeSub = customerId ? await getActivePackageSubscription(customerId, rows[i].id, now) : null;
+      const isPurchased = !!activeSub;
+      return {
+        ...item,
         isPurchased,
         daysLeft: isPurchased ? computeDaysLeft(activeSub?.endAt ?? null, now) : null,
-        shareableLink: buildShareUrl("packages", String(p.id), baseUrl),
+        shareableLink: buildShareUrl("packages", item._id, baseUrl),
+      };
+    })
+  );
+  return { rows, total, data };
+};
+
+export const enrichPackagesSql = async (rows: Package[], customerId: number | null, baseUrl?: string) => {
+  const now = new Date();
+  const shared = await enrichPackagesShared(rows);
+  return Promise.all(
+    shared.map(async (item, i) => {
+      const activeSub = customerId ? await getActivePackageSubscription(customerId, rows[i].id, now) : null;
+      const isPurchased = !!activeSub;
+      return {
+        ...item,
+        isPurchased,
+        daysLeft: isPurchased ? computeDaysLeft(activeSub?.endAt ?? null, now) : null,
+        shareableLink: buildShareUrl("packages", item._id, baseUrl),
       };
     })
   );

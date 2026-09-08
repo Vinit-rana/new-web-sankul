@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { autoFlushGroup } from "../../middlewares/autoFlush";
+import { CacheEntity } from "../../middlewares/flushGroups";
 import authenticate, { requireRole } from "../../middlewares/authenticate";
 import {
   listInquiries,
@@ -22,8 +23,8 @@ router.delete("/inquiries/:id", deleteInquiry);
 
 // Departments (contact-us master)
 router.get("/departments", listDepartments);
-router.post("/departments", autoFlushGroup("contact-department"), createDepartment);
-router.put("/departments/:id", autoFlushGroup("contact-department"), updateDepartment);
-router.delete("/departments/:id", autoFlushGroup("contact-department"), deleteDepartment);
+router.post("/departments", autoFlushGroup(CacheEntity.ContactDepartment), createDepartment);
+router.put("/departments/:id", autoFlushGroup(CacheEntity.ContactDepartment), updateDepartment);
+router.delete("/departments/:id", autoFlushGroup(CacheEntity.ContactDepartment), deleteDepartment);
 
 export default router;

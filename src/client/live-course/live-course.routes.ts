@@ -1,6 +1,8 @@
 import { Router } from "express";
 import authenticate, { requireRole } from "../../middlewares/authenticate";
-import { cacheRoute } from "../../middlewares/cacheRoute";
+import { cacheRoute, CacheScope } from "../../middlewares/cacheRoute";
+import { CacheEntity } from "../../middlewares/flushGroups";
+import { CACHE_TTL } from "../../config/cacheTtl";
 import {
   listLiveCoursesForClient,
   listRecentlyAddedLiveCourses,
@@ -25,11 +27,11 @@ const router = Router();
 router.use(authenticate, requireRole("customer"));
 
 // Discovery feeds + course detail/sessions embed a per-user isPurchased overlay →
-// Tier-2, cached per-user + short TTL (ebook precedent), entity:"live-course"
+// Tier-2, cached per-user + short TTL (ebook precedent), entity: CacheEntity.LiveCourse
 // (admin live-course writes flush it). NOT cached: /live-now-sessions (live state),
 // /my* (per-user schedule), recordings + lecture (per-request media tokens),
 // /:id/schedule* (per-user timetable).
-const LC = { ttl: 86400, entity: "live-course" as const, scope: "user" as const };
+const LC = { ttl: CACHE_TTL.DAY, entity: CacheEntity.LiveCourse as const, scope: CacheScope.User as const };
 router.get("/",                     cacheRoute(LC), listLiveCoursesForClient);     // GET /api/v1/client/live-courses
 router.get("/recently-added",       cacheRoute(LC), listRecentlyAddedLiveCourses); // GET /api/v1/client/live-courses/recently-added  (newest-first feed)
 router.get("/upcoming-batches",     cacheRoute(LC), listUpcomingLiveBatches);      // GET /api/v1/client/live-courses/upcoming-batches  (home carousel + category tab bar)

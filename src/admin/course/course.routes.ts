@@ -47,6 +47,8 @@ import {
 } from "./video.controller";
 
 import { cacheRoute } from "../../middlewares/cacheRoute";
+import { CacheEntity } from "../../middlewares/flushGroups";
+import { CACHE_TTL } from "../../config/cacheTtl";
 import { autoFlushGroup } from "../../middlewares/autoFlush";
 
 const router = Router();
@@ -60,62 +62,64 @@ router.get("/pre-requisites", getPreRequisites);
 // flush "video-category" (fans out to catalog-course/catalog-package/categories/
 // free). Material writes flush "material".
 router.get("/video-categories", getCourseVideoCategories);
-router.post("/video-categories", autoFlushGroup("video-category"), createCourseVideoCategory);
-router.put("/video-categories/:videoCategoryId", autoFlushGroup("video-category"), updateCourseVideoCategory);
-router.delete("/video-categories/:videoCategoryId", autoFlushGroup("video-category"), deleteCourseVideoCategory);
+router.post("/video-categories", autoFlushGroup(CacheEntity.VideoCategory), createCourseVideoCategory);
+router.put("/video-categories/:videoCategoryId", autoFlushGroup(CacheEntity.VideoCategory), updateCourseVideoCategory);
+router.delete("/video-categories/:videoCategoryId", autoFlushGroup(CacheEntity.VideoCategory), deleteCourseVideoCategory);
 router.get("/video-category-relations", getVideoCategoryRelations);
-router.post("/video-category-relations", autoFlushGroup("video-category"), createVideoCategoryRelation);
-router.put("/video-category-relations/:relationId", autoFlushGroup("video-category"), updateVideoCategoryRelation);
-router.delete("/video-category-relations/:relationId", autoFlushGroup("video-category"), deleteVideoCategoryRelation);
+router.post("/video-category-relations", autoFlushGroup(CacheEntity.VideoCategory), createVideoCategoryRelation);
+router.put("/video-category-relations/:relationId", autoFlushGroup(CacheEntity.VideoCategory), updateVideoCategoryRelation);
+router.delete("/video-category-relations/:relationId", autoFlushGroup(CacheEntity.VideoCategory), deleteVideoCategoryRelation);
 
 router.get("/materials", getCourseMaterials);
-router.post("/materials", autoFlushGroup("material"), createCourseMaterial);
-router.put("/materials/:materialId", autoFlushGroup("material"), updateCourseMaterial);
-router.delete("/materials/:materialId", autoFlushGroup("material"), deleteCourseMaterial);
+router.post("/materials", autoFlushGroup(CacheEntity.Material), createCourseMaterial);
+router.put("/materials/:materialId", autoFlushGroup(CacheEntity.Material), updateCourseMaterial);
+router.delete("/materials/:materialId", autoFlushGroup(CacheEntity.Material), deleteCourseMaterial);
 
-// Route-level response cache. Reads tagged entity:"course"; the writes below
-// call autoFlushGroup("course") so edits clear these instantly. See cache/ROUTE_CACHE.md.
-router.get("/", cacheRoute({ ttl: 86400, entity: "course" }), getCourses);
-router.get("/:id", cacheRoute({ ttl: 86400, entity: "course" }), getCourseById);
+// Route-level response cache. Reads tagged entity: CacheEntity.Course; the writes below
+// call autoFlushGroup(CacheEntity.Course) so edits clear these instantly. See cache/ROUTE_CACHE.md.
+router.get("/", cacheRoute({ ttl: CACHE_TTL.DAY, entity: CacheEntity.Course }), getCourses);
+router.get("/:id", cacheRoute({ ttl: CACHE_TTL.DAY, entity: CacheEntity.Course }), getCourseById);
 
 // POST create course
-router.post("/", uploadS3.single("image"), autoFlushGroup("course"), createCourse);
+router.post("/", uploadS3.single("image"), autoFlushGroup(CacheEntity.Course), createCourse);
 
 // PUT update course
-router.put("/:id", uploadS3.single("image"), autoFlushGroup("course"), updateCourse);
+router.put("/:id", uploadS3.single("image"), autoFlushGroup(CacheEntity.Course), updateCourse);
 
 // DELETE delete course
-router.delete("/:id", autoFlushGroup("course"), deleteCourse);
+router.delete("/:id", autoFlushGroup(CacheEntity.Course), deleteCourse);
 
 // PATCH toggle popular flag
-router.patch("/:id/popular", autoFlushGroup("course"), toggleCoursePopular);
+router.patch("/:id/popular", autoFlushGroup(CacheEntity.Course), toggleCoursePopular);
 
 // PATCH toggle status (activate/deactivate) — no required-field checks
-router.patch("/:id/status", autoFlushGroup("course"), toggleCourseStatus);
+router.patch("/:id/status", autoFlushGroup(CacheEntity.Course), toggleCourseStatus);
 
 // Pricing Plans
 router.get("/:id/plans", getCoursePlans);
 router.get("/:id/promocodes", getCoursePromocodes);
 router.get("/:id/exam-categories", getCourseExamCategories);
-router.put("/:id/exam-categories/reorder", autoFlushGroup("course"), reorderCourseExamCategories);
+router.put("/:id/exam-categories/reorder", autoFlushGroup(CacheEntity.Course), reorderCourseExamCategories);
 router.get("/:id/material-categories", getCourseMaterialCategories);
-router.put("/:id/material-categories/reorder", autoFlushGroup("course"), reorderCourseMaterialCategories);
+router.put("/:id/material-categories/reorder", autoFlushGroup(CacheEntity.Course), reorderCourseMaterialCategories);
 router.get("/:id/books", getCourseBooks);
-router.post("/:id/books", autoFlushGroup("course"), linkCourseBooks);
-router.put("/:id/books/reorder", autoFlushGroup("course"), reorderCourseBooks);
-router.delete("/:id/books/:bookId", autoFlushGroup("course"), unlinkCourseBook);
-router.post("/:id/plans", createCoursePlan);
+router.post("/:id/books", autoFlushGroup(CacheEntity.Course), linkCourseBooks);
+router.put("/:id/books/reorder", autoFlushGroup(CacheEntity.Course), reorderCourseBooks);
+router.delete("/:id/books/:bookId", autoFlushGroup(CacheEntity.Course), unlinkCourseBook);
+// flush CacheEntity.Plan — was unflushed: plans/prices are embedded in every
+// cached course detail/list (see flushGroups.ts's "plan" group).
+router.post("/:id/plans", autoFlushGroup(CacheEntity.Plan), createCoursePlan);
 router.get("/plans/:planId", getCoursePlanById);
-router.put("/plans/:planId", updateCoursePlan);
-router.delete("/plans/:planId", deleteCoursePlan);
+router.put("/plans/:planId", autoFlushGroup(CacheEntity.Plan), updateCoursePlan);
+router.delete("/plans/:planId", autoFlushGroup(CacheEntity.Plan), deleteCoursePlan);
 
 // Videos (writes flush "video"). NOTE: GET "/videos" is shadowed by GET "/:id"
 // above (pre-existing) — the reachable read is GET "/videos/:videoId".
 router.get("/videos", getVideos);
-router.post("/videos", autoFlushGroup("video"), createVideo);
-router.post("/videos/reorder", autoFlushGroup("video"), reorderVideos);
-router.get("/videos/:videoId", cacheRoute({ ttl: 86400, entity: "video" }), getVideoById);
-router.put("/videos/:videoId", autoFlushGroup("video"), updateVideo);
-router.delete("/videos/:videoId", autoFlushGroup("video"), deleteVideo);
+router.post("/videos", autoFlushGroup(CacheEntity.Video), createVideo);
+router.post("/videos/reorder", autoFlushGroup(CacheEntity.Video), reorderVideos);
+router.get("/videos/:videoId", cacheRoute({ ttl: CACHE_TTL.DAY, entity: CacheEntity.Video }), getVideoById);
+router.put("/videos/:videoId", autoFlushGroup(CacheEntity.Video), updateVideo);
+router.delete("/videos/:videoId", autoFlushGroup(CacheEntity.Video), deleteVideo);
 
 export default router;

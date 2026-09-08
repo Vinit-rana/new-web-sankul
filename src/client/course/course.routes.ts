@@ -14,7 +14,9 @@ import {
   reportLectureProgress,
   listMyCoursesForResume,
 } from "./progress.controller";
-import { cacheRoute } from "../../middlewares/cacheRoute";
+import { cacheRoute, CacheScope } from "../../middlewares/cacheRoute";
+import { CacheEntity } from "../../middlewares/flushGroups";
+import { CACHE_TTL } from "../../config/cacheTtl";
 
 const router = Router();
 
@@ -22,14 +24,16 @@ const router = Router();
 router.use(authenticate, requireRole("customer"));
 
 // Tier-1 (fully shared): course categories carry no per-user state (no
-// customerId passed). scope:"shared" → one entry for all clients. The course
-// LIST + category-courses + DETAIL embed isPurchased/progress → Tier-2, cached
-// per-user + short TTL (ebook precedent), entity:"catalog-course" (admin course
-// / live-course writes flush it). /lecture (video tokens) + /my (resume) stay uncached.
-router.get("/", cacheRoute({ ttl: 86400, entity: "catalog-course", scope: "user" }), listCoursesHandler);
+// customerId passed). scope: CacheScope.Shared → one entry for all clients.
+//
+// LIST/category-courses/DETAIL cache internally now (listCoursesWithPlans /
+// buildCourseDetailsSql use cache.aside — shared data cached, isPurchased/
+// daysLeft always live). Don't wrap these in an outer cacheRoute({ scope:
+// CacheScope.User }) — it re-freezes those per-user fields for the route's TTL.
+router.get("/", listCoursesHandler);
 router.get("/lecture", getLectureHandler);
-router.get("/categories", cacheRoute({ ttl: 86400, entity: "catalog-course", scope: "shared" }), listCourseCategoriesHandler);
-router.get("/categories/:categoryId/courses", cacheRoute({ ttl: 86400, entity: "catalog-course", scope: "user" }), listCoursesByCategoryHandler);
+router.get("/categories", cacheRoute({ ttl: CACHE_TTL.DAY, entity: CacheEntity.CatalogCourse, scope: CacheScope.Shared }), listCourseCategoriesHandler);
+router.get("/categories/:categoryId/courses", listCoursesByCategoryHandler);
 router.post("/shipping", addCourseOrderShippingHandler);
 router.get("/orders/:id/invoice", getOrderInvoiceHandler);
 router.get("/orders/:id", getOrderDetailsHandler);
@@ -38,6 +42,6 @@ router.get("/orders/:id", getOrderDetailsHandler);
 router.get("/my", listMyCoursesForResume);
 router.post("/lectures/:videoId/progress", reportLectureProgress);
 
-router.get("/:id", cacheRoute({ ttl: 86400, entity: "catalog-course", scope: "user" }), getCourseByIdHandler);
+router.get("/:id", getCourseByIdHandler);
 
 export default router;

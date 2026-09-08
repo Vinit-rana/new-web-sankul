@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { autoFlushGroup } from "../../middlewares/autoFlush";
+import { CacheEntity } from "../../middlewares/flushGroups";
 import authenticate, { requireRole } from "../../middlewares/authenticate";
 import {
   getDistricts, createDistrict, updateDistrict, deleteDistrict,
@@ -23,20 +24,20 @@ router.get("/districts", getDistricts);
 // target-goals write prisma.customerTargetGoal — the SAME table admin/goal
 // writes — so they flush the "goal" group, which fans out to catalog-package,
 // client-dashboard and customer-lookup exactly as admin/goal does.
-router.post("/districts", autoFlushGroup("customer-lookup"), createDistrict);
-router.put("/districts/:id", autoFlushGroup("customer-lookup"), updateDistrict);
-router.delete("/districts/:id", autoFlushGroup("customer-lookup"), deleteDistrict);
+router.post("/districts", autoFlushGroup(CacheEntity.CustomerLookup), createDistrict);
+router.put("/districts/:id", autoFlushGroup(CacheEntity.CustomerLookup), updateDistrict);
+router.delete("/districts/:id", autoFlushGroup(CacheEntity.CustomerLookup), deleteDistrict);
 
 // Educations
 router.get("/educations", getEducations);
-router.post("/educations", autoFlushGroup("customer-lookup"), createEducation);
-router.put("/educations/:id", autoFlushGroup("customer-lookup"), updateEducation);
-router.delete("/educations/:id", autoFlushGroup("customer-lookup"), deleteEducation);
+router.post("/educations", autoFlushGroup(CacheEntity.CustomerLookup), createEducation);
+router.put("/educations/:id", autoFlushGroup(CacheEntity.CustomerLookup), updateEducation);
+router.delete("/educations/:id", autoFlushGroup(CacheEntity.CustomerLookup), deleteEducation);
 
 // Target Goals
 router.get("/target-goals", getTargetGoals);
-router.post("/target-goals", autoFlushGroup("goal"), createTargetGoal);
-router.put("/target-goals/:id", autoFlushGroup("goal"), updateTargetGoal);
-router.delete("/target-goals/:id", autoFlushGroup("goal"), deleteTargetGoal);
+router.post("/target-goals", autoFlushGroup(CacheEntity.Goal), createTargetGoal);
+router.put("/target-goals/:id", autoFlushGroup(CacheEntity.Goal), updateTargetGoal);
+router.delete("/target-goals/:id", autoFlushGroup(CacheEntity.Goal), deleteTargetGoal);
 
 export default router;

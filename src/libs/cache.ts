@@ -28,21 +28,30 @@ import { redisClient, isRedisReady } from "../config/redis";
 import logger from "../utils/logger";
 import { cacheHitsTotal, cacheMissesTotal } from "../utils/metrics";
 import { incrementContext } from "../utils/requestContext";
+import { istJsonReplacer } from "../utils/istJson";
+import { CacheEntity } from "../middlewares/flushGroups";
 import crypto from "crypto";
 
 const ENV = (process.env.NODE_ENV || "dev").toLowerCase();
 const KEY_VERSION = process.env.CACHE_KEY_VERSION || "v1";
 
-export type Domain =
-  | "admin"
-  | "client"
-  | "auth"
-  | "permission"
-  | "shared";
+/** Which surface/caller a cache-aside entry belongs to — the domain segment
+ * of its key. A real enum, same reasoning as CacheEntity/CacheScope in
+ * middlewares/flushGroups.ts and cacheRoute.ts: one reusable symbol instead
+ * of a retyped string at every call site. */
+export enum CacheDomain {
+  Admin = "admin",
+  Client = "client",
+  Auth = "auth",
+  Permission = "permission",
+  Shared = "shared",
+}
+
+const ALL_DOMAINS = Object.values(CacheDomain);
 
 export const key = (
-  domain: Domain,
-  entity: string,
+  domain: CacheDomain,
+  entity: CacheEntity,
   id: string,
   version: string = KEY_VERSION
 ): string => `${ENV}:${domain}:${entity}:${id}:${version}`;
@@ -50,13 +59,13 @@ export const key = (
 /**
  * Build a stable key prefix (no version suffix) for `invalidateByPrefix`.
  * `key()` always appends `:{version}`, so it cannot be used to construct a
- * partial prefix — `key("admin","package","list:")` yields
- * `...:package:list::v1`, which never matches real keys like
+ * partial prefix — `key(CacheDomain.Admin, CacheEntity.Package, "list:")`
+ * yields `...:package:list::v1`, which never matches real keys like
  * `...:package:list:<hash>:v1`. Use this for prefix sweeps instead.
  */
 export const keyPrefix = (
-  domain: Domain,
-  entity: string,
+  domain: CacheDomain,
+  entity: CacheEntity,
   idPrefix: string
 ): string => `${ENV}:${domain}:${entity}:${idPrefix}`;
 
@@ -186,7 +195,13 @@ export const aside = async <T>(opts: AsideOptions<T>): Promise<T> => {
 
 const writeBack = async <T>(k: string, value: T, ttlSeconds: number) => {
   try {
-    await redisClient.set(k, JSON.stringify(value), "EX", jitter(ttlSeconds));
+    // Same IST date replacer cacheRoute.ts uses (app.set("json replacer", ...) in
+    // app.ts). Cached values here routinely embed real Date objects (createdAt/
+    // updatedAt on catalog DTOs) — a bare JSON.stringify would freeze those as
+    // native UTC `...Z` strings forever (JSON.parse never resurrects a Date, so
+    // nothing downstream gets a second chance to reformat them). Apply the same
+    // replacer here so a cache HIT and a cache MISS always render dates identically.
+    await redisClient.set(k, JSON.stringify(value, istJsonReplacer), "EX", jitter(ttlSeconds));
   } catch (err) {
     logger.warn("cache.aside write-back failed", {
       key: k,
@@ -240,6 +255,21 @@ export const invalidateByPrefix = async (prefix: string): Promise<number> => {
   return deleted;
 };
 
+/**
+ * Sweep every `cache.aside` entry for one entity, across ALL domains — the
+ * `libs/cache.ts` counterpart to `middlewares/autoFlush.ts`'s route-cache
+ * sweep. `autoFlushGroup`/`flushEntity` call this automatically for the same
+ * entity, so a single `autoFlushGroup(CacheEntity.Video)` on an admin write
+ * clears BOTH the route cache AND any `cache.aside` entries tagged with that
+ * entity — callers never need to know two separate cache layers exist.
+ */
+export const invalidateEntity = async (entity: CacheEntity): Promise<number> => {
+  const counts = await Promise.all(
+    ALL_DOMAINS.map((domain) => invalidateByPrefix(keyPrefix(domain, entity, "")))
+  );
+  return counts.reduce((a, b) => a + b, 0);
+};
+
 export default {
   key,
   keyPrefix,
@@ -247,4 +277,5 @@ export default {
   aside,
   invalidate,
   invalidateByPrefix,
+  invalidateEntity,
 };

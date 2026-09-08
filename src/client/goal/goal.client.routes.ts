@@ -5,7 +5,9 @@ import {
   updateMyGoalsHandler,
 } from "./goal.client.controller";
 import authenticate from "../../middlewares/authenticate";
-import { cacheRoute } from "../../middlewares/cacheRoute";
+import { cacheRoute, CacheScope } from "../../middlewares/cacheRoute";
+import { CacheEntity } from "../../middlewares/flushGroups";
+import { CACHE_TTL } from "../../config/cacheTtl";
 
 const router = Router();
 
@@ -19,7 +21,7 @@ const router = Router();
 // Passing authenticate ensures only logged in customers see it, but we can leave it open for onboarding.
 // Tier-1 (active goals master — identical for all users). my-goals below is
 // per-user and stays uncached. Admin goal writes flush "goal".
-router.get("/", authenticate, cacheRoute({ ttl: 86400, entity: "goal", scope: "shared" }), fetchActiveGoalsHandler);
+router.get("/", authenticate, cacheRoute({ ttl: CACHE_TTL.DAY, entity: CacheEntity.Goal, scope: CacheScope.Shared }), fetchActiveGoalsHandler);
 
 // Specifically fetches only the selected labels chosen by the authenticated user
 router.get("/my-goals", authenticate, fetchMySelectedGoalsHandler);

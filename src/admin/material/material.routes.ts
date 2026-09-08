@@ -2,6 +2,8 @@ import { Router } from "express";
 import authenticate, { requireRole } from "../../middlewares/authenticate";
 import { uploadS3, uploadS3Mixed } from "../../middlewares/upload";
 import { cacheRoute } from "../../middlewares/cacheRoute";
+import { CacheEntity } from "../../middlewares/flushGroups";
+import { CACHE_TTL } from "../../config/cacheTtl";
 import { autoFlushGroup } from "../../middlewares/autoFlush";
 import {
   listCategories,
@@ -34,27 +36,27 @@ router.use(authenticate); // authz: catalog RBAC (enforceRbac) + router-level st
 // Category writes flush "material-category"; leaf-material writes flush "material".
 
 // Categories
-router.get("/categories", cacheRoute({ ttl: 86400, entity: "material-category" }), listCategories);
-router.post("/categories", uploadS3.single("image"), autoFlushGroup("material-category"), createCategory);
-router.post("/categories/reorder", autoFlushGroup("material-category"), reorderCategories);
-router.get("/categories/:id", cacheRoute({ ttl: 86400, entity: "material-category" }), getCategoryById);
-router.put("/categories/:id", uploadS3.single("image"), autoFlushGroup("material-category"), updateCategory);
-router.delete("/categories/:id", autoFlushGroup("material-category"), deleteCategory);
-router.patch("/categories/:id/status", autoFlushGroup("material-category"), toggleCategoryStatus);
-router.post("/categories/:id/duplicate", autoFlushGroup("material-category"), duplicateCategory);
+router.get("/categories", cacheRoute({ ttl: CACHE_TTL.DAY, entity: CacheEntity.MaterialCategory }), listCategories);
+router.post("/categories", uploadS3.single("image"), autoFlushGroup(CacheEntity.MaterialCategory), createCategory);
+router.post("/categories/reorder", autoFlushGroup(CacheEntity.MaterialCategory), reorderCategories);
+router.get("/categories/:id", cacheRoute({ ttl: CACHE_TTL.DAY, entity: CacheEntity.MaterialCategory }), getCategoryById);
+router.put("/categories/:id", uploadS3.single("image"), autoFlushGroup(CacheEntity.MaterialCategory), updateCategory);
+router.delete("/categories/:id", autoFlushGroup(CacheEntity.MaterialCategory), deleteCategory);
+router.patch("/categories/:id/status", autoFlushGroup(CacheEntity.MaterialCategory), toggleCategoryStatus);
+router.post("/categories/:id/duplicate", autoFlushGroup(CacheEntity.MaterialCategory), duplicateCategory);
 router.get("/categories/:id/courses", getCategoryCourses);
 router.get("/categories/:id/products", getCategoryLinkedProducts);
 router.get("/categories/:id/materials", getCategoryMaterials);
 
 // Leaf materials
-router.get("/", cacheRoute({ ttl: 86400, entity: "material" }), listMaterials);
-router.post("/", uploadS3Mixed.single("file"), autoFlushGroup("material"), createMaterial);
-router.post("/reorder", autoFlushGroup("material"), reorderMaterials);
-router.post("/bulk-status", autoFlushGroup("material"), bulkStatus);
-router.post("/bulk-delete", autoFlushGroup("material"), bulkDelete);
-router.get("/:id", cacheRoute({ ttl: 86400, entity: "material" }), getMaterialById);
-router.put("/:id", uploadS3Mixed.single("file"), autoFlushGroup("material"), updateMaterial);
-router.delete("/:id", autoFlushGroup("material"), deleteMaterial);
-router.patch("/:id/status", autoFlushGroup("material"), toggleMaterialStatus);
+router.get("/", cacheRoute({ ttl: CACHE_TTL.DAY, entity: CacheEntity.Material }), listMaterials);
+router.post("/", uploadS3Mixed.single("file"), autoFlushGroup(CacheEntity.Material), createMaterial);
+router.post("/reorder", autoFlushGroup(CacheEntity.Material), reorderMaterials);
+router.post("/bulk-status", autoFlushGroup(CacheEntity.Material), bulkStatus);
+router.post("/bulk-delete", autoFlushGroup(CacheEntity.Material), bulkDelete);
+router.get("/:id", cacheRoute({ ttl: CACHE_TTL.DAY, entity: CacheEntity.Material }), getMaterialById);
+router.put("/:id", uploadS3Mixed.single("file"), autoFlushGroup(CacheEntity.Material), updateMaterial);
+router.delete("/:id", autoFlushGroup(CacheEntity.Material), deleteMaterial);
+router.patch("/:id/status", autoFlushGroup(CacheEntity.Material), toggleMaterialStatus);
 
 export default router;
