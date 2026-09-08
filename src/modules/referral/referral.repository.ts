@@ -1,6 +1,17 @@
 import { prisma } from "../../config/prisma";
 import type { Prisma } from "@prisma/client";
 import { buildLikeTokens, buildPrismaSearch } from "../../utils/searchFilter";
+import { RefferalTransactionStatus } from "../../shared/enums";
+
+/** Thrown when the conditional debit matches no row — the balance moved between
+ *  the controller's pre-check and the transaction. Mapped to the same 400 the
+ *  pre-check returns, so the API is unchanged. */
+export class InsufficientRewardPoints extends Error {
+  constructor() {
+    super("Insufficient reward points.");
+    this.name = "InsufficientRewardPoints";
+  }
+}
 
 /**
  * Prisma persistence for the referral MySQL branch.
@@ -38,9 +49,25 @@ export const referralRepository = {
   // ─── Transactions ─────────────────────────────────────────────────────────
   // `search` matches on the human-readable `description` (the only natural text
   // column on the ledger row).
+  // ─── Client-facing reads ──────────────────────────────────────────────────
+  // `rejected` rows are admin/finance-only. The customer's ledger hides them so
+  // the app never receives a status it has no branch for — which reproduces the
+  // pre-2026-09-08 behaviour exactly, when reject DELETED the row and the coins
+  // simply reappeared. The row still exists and still shows in the admin report;
+  // it is only invisible on the client surface.
+  //
+  // `status` is NOT NULL (schema + MySQL), so `not` is safe here — on a NULLABLE
+  // column Prisma's `not` would silently drop NULL rows too.
+  //
+  // MUST stay in sync across all three functions below: list and count share a
+  // predicate, and a drift makes `pagination.total` disagree with the rows
+  // returned. findTransaction needs it too or a direct id lookup leaks a row the
+  // list hides.
+  clientVisible: { status: { not: RefferalTransactionStatus.REJECTED } } as const,
+
   listTransactions: (customerId: number, opts: { type?: "credit" | "debit"; search?: string; skip: number; take: number }) =>
     prisma.refferalTransaction.findMany({
-      where: { customerId, ...(opts.type ? { type: opts.type } : {}), ...(buildPrismaSearch(opts.search, ["description"]) ?? {}) },
+      where: { customerId, ...referralRepository.clientVisible, ...(opts.type ? { type: opts.type } : {}), ...(buildPrismaSearch(opts.search, ["description"]) ?? {}) },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       skip: opts.skip,
       take: opts.take,
@@ -48,14 +75,14 @@ export const referralRepository = {
 
   countTransactions: (customerId: number, opts: { type?: "credit" | "debit"; search?: string }) =>
     prisma.refferalTransaction.count({
-      where: { customerId, ...(opts.type ? { type: opts.type } : {}), ...(buildPrismaSearch(opts.search, ["description"]) ?? {}) },
+      where: { customerId, ...referralRepository.clientVisible, ...(opts.type ? { type: opts.type } : {}), ...(buildPrismaSearch(opts.search, ["description"]) ?? {}) },
     }),
 
   findTransaction: (id: number, customerId: number) =>
-    prisma.refferalTransaction.findFirst({ where: { id, customerId } }),
+    prisma.refferalTransaction.findFirst({ where: { id, customerId, ...referralRepository.clientVisible } }),
 
-  findTransactionByProviderRef: (providerRef: string) =>
-    prisma.refferalTransaction.findFirst({ where: { providerRef } }),
+  findTransactionByReferenceNumber: (referenceNumber: string) =>
+    prisma.refferalTransaction.findFirst({ where: { referenceNumber } }),
 
   // ─── Withdrawal (atomic: debit points + create pending DEBIT txn) ──────────
   /** Decrement reward points and create the pending DEBIT txn in one tx. */
@@ -65,10 +92,16 @@ export const referralRepository = {
     bankAccount: Prisma.InputJsonValue;
   }) =>
     prisma.$transaction(async (tx) => {
-      await tx.customer.update({
-        where: { id: input.customerId },
+      // Conditional debit: the balance is re-checked IN the same statement that
+      // decrements it, so two concurrent requests can't both pass a check made
+      // before the transaction. count===0 means someone else got there first.
+      // With payouts manual there is no gateway left to bounce a duplicate —
+      // finance would just see two rows in the CSV and pay both.
+      const debited = await tx.customer.updateMany({
+        where: { id: input.customerId, rewardPoints: { gte: input.amount } },
         data: { rewardPoints: { decrement: input.amount } },
       });
+      if (debited.count === 0) throw new InsufficientRewardPoints();
       return tx.refferalTransaction.create({
         data: {
           customerId: input.customerId,
@@ -83,10 +116,10 @@ export const referralRepository = {
       });
     }),
 
-  setProviderRef: (id: number, providerRef: string) =>
+  setReferenceNumber: (id: number, referenceNumber: string) =>
     prisma.refferalTransaction.update({
       where: { id },
-      data: { providerRef, updatedAt: new Date() },
+      data: { referenceNumber, updatedAt: new Date() },
     }),
 
   /** Refund on payout failure: re-credit points + mark txn failed (atomic). */
@@ -102,10 +135,10 @@ export const referralRepository = {
       });
     }),
 
-  /** Webhook: flip a pending withdrawal to successful/failed by providerRef. */
-  setStatusByProviderRef: (providerRef: string, status: "successful" | "failed", reason?: string) =>
+  /** Webhook: flip a pending withdrawal to successful/failed by referenceNumber. */
+  setStatusByReferenceNumber: (referenceNumber: string, status: "successful" | "failed", reason?: string) =>
     prisma.refferalTransaction.updateMany({
-      where: { providerRef },
+      where: { referenceNumber },
       data: { status, ...(reason ? { failureReason: reason.slice(0, 500) } : {}), updatedAt: new Date() },
     }),
 
@@ -132,7 +165,7 @@ export const referralRepository = {
 
   // ─── Admin: transactions list (with customer) ─────────────────────────────
   adminListTransactions: (opts: {
-    customerId?: number; type?: "credit" | "debit"; status?: "pending" | "successful" | "failed";
+    customerId?: number; type?: "credit" | "debit"; status?: "pending" | "successful" | "failed" | "rejected";
     from?: Date; to?: Date; skip: number; take: number;
   }) => {
     const where: Prisma.RefferalTransactionWhereInput = {};
@@ -153,7 +186,7 @@ export const referralRepository = {
     });
   },
   adminCountTransactions: (opts: {
-    customerId?: number; type?: "credit" | "debit"; status?: "pending" | "successful" | "failed"; from?: Date; to?: Date;
+    customerId?: number; type?: "credit" | "debit"; status?: "pending" | "successful" | "failed" | "rejected"; from?: Date; to?: Date;
   }) => {
     const where: Prisma.RefferalTransactionWhereInput = {};
     if (opts.customerId !== undefined) where.customerId = opts.customerId;
@@ -169,18 +202,43 @@ export const referralRepository = {
 
   findTransactionById: (id: number) => prisma.refferalTransaction.findUnique({ where: { id } }),
 
-  /** Update a withdrawal's status (+ optional description). */
-  updateTransactionStatus: (id: number, status: "pending" | "successful" | "failed", description?: string) =>
+  /** Update a withdrawal's status (+ optional UTR reference).
+   *  Deliberately does NOT touch `description`: that column is the CUSTOMER's
+   *  ledger text ("You have requested for bank transfer."), rendered on
+   *  /client/referral/transactions/:id. Letting an admin overwrite it from the
+   *  mark-paid screen put unvalidated admin free-text on a customer screen, and
+   *  the withdrawal report never displayed it back, so nobody could see what
+   *  had been written. The UTR is what finance actually needs recorded. */
+  updateTransactionStatus: (
+    id: number,
+    status: "pending" | "successful" | "failed",
+    referenceNumber?: string
+  ) =>
     prisma.refferalTransaction.update({
       where: { id },
-      data: { status, ...(description ? { description: description.slice(0, 150) } : {}), updatedAt: new Date() },
+      data: {
+        status,
+        ...(referenceNumber ? { referenceNumber: referenceNumber.slice(0, 255) } : {}),
+        updatedAt: new Date(),
+      },
     }),
 
-  /** Reject a pending withdrawal: refund points + delete the txn (atomic). */
-  rejectWithdrawal: (input: { id: number; customerId: number; amount: number }) =>
+  /** Reject a pending withdrawal: refund points + terminate the txn (atomic).
+   *  The row is KEPT (status -> rejected) rather than deleted, so the customer's
+   *  ledger and the finance report can still answer "what happened to my
+   *  request?". Both halves stay in one $transaction — a partial apply would
+   *  refund the coins while leaving the row payable, i.e. pay twice. */
+  rejectWithdrawal: (input: { id: number; customerId: number; amount: number; reason?: string }) =>
     prisma.$transaction(async (tx) => {
       await tx.customer.update({ where: { id: input.customerId }, data: { rewardPoints: { increment: input.amount } } });
-      await tx.refferalTransaction.delete({ where: { id: input.id } });
+      await tx.refferalTransaction.update({
+        where: { id: input.id },
+        data: {
+          status: "rejected",
+          ...(input.reason ? { failureReason: input.reason.slice(0, 500) } : {}),
+          updatedAt: new Date(),
+        },
+      });
     }),
 
   /** Manual admin reward adjustment: inc/dec points + create successful txn (atomic). */
@@ -293,7 +351,7 @@ export const referralRepository = {
     const limit = opts.take !== undefined ? ` LIMIT ? OFFSET ?` : "";
     if (opts.take !== undefined) params.push(opts.take, opts.skip ?? 0);
     return prisma.$queryRawUnsafe<any[]>(
-      `SELECT t.id, t.created_at AS date, t.coin, t.status, t.provider_ref AS providerRef, t.failure_reason AS failureReason,
+      `SELECT t.id, t.created_at AS date, t.coin, t.status, t.reference_number AS referenceNumber, t.failure_reason AS failureReason,
               JSON_UNQUOTE(JSON_EXTRACT(t.bank_account,'$.accountHolderName')) AS accountHolderName,
               JSON_UNQUOTE(JSON_EXTRACT(t.bank_account,'$.ifscCode')) AS ifscCode,
               JSON_UNQUOTE(JSON_EXTRACT(t.bank_account,'$.accountNumber')) AS accountNumber,

@@ -42,11 +42,11 @@ export const razorpayPayoutWebhook = async (req: Request, res: Response) => {
 
     const payout = req.body?.payload?.payout?.entity;
     const newStatus = event ? EVENT_TO_STATUS[event] : undefined;
-    const providerRef: string | undefined = payout?.id;
+    const referenceNumber: string | undefined = payout?.id;
 
     // Acknowledge unrelated events so Razorpay stops retrying.
-    if (!event || !newStatus || !providerRef) {
-      logger.info("razorpayPayoutWebhook ignored event", { traceId, event, providerRef });
+    if (!event || !newStatus || !referenceNumber) {
+      logger.info("razorpayPayoutWebhook ignored event", { traceId, event, referenceNumber });
       return res.status(200).json({ success: true, ignored: true });
     }
 
@@ -55,16 +55,16 @@ export const razorpayPayoutWebhook = async (req: Request, res: Response) => {
     const nextStatus = newStatus === RefferalTransactionStatus.SUCCESSFUL ? "successful" : "failed";
 
     // ─── ws_refferal_transaction ─────────────────────────────────────────
-    const result = await applyPayoutWebhook(providerRef, nextStatus, failureReason);
+    const result = await applyPayoutWebhook(referenceNumber, nextStatus, failureReason);
     if (result === "unknown") {
-      logger.warn("razorpayPayoutWebhook unknown payout id", { traceId, event, providerRef });
+      logger.warn("razorpayPayoutWebhook unknown payout id", { traceId, event, referenceNumber });
       return res.status(200).json({ success: true, ignored: true, reason: "Unknown payout id." });
     }
     if (result === "already") {
-      logger.info("razorpayPayoutWebhook already processed", { traceId, event, providerRef });
+      logger.info("razorpayPayoutWebhook already processed", { traceId, event, referenceNumber });
       return res.status(200).json({ success: true, alreadyProcessed: true });
     }
-    logger.info("razorpayPayoutWebhook applied", { traceId, event, providerRef, status: nextStatus });
+    logger.info("razorpayPayoutWebhook applied", { traceId, event, referenceNumber, status: nextStatus });
     return res.status(200).json({ success: true });
   } catch (error) {
     // Log the real error server-side; return a generic message to the caller.

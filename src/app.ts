@@ -364,6 +364,19 @@ app.use("/api/v1/educator", globalLimiter, educatorRoutes);
 app.use("/api/v1/promoter", globalLimiter, promoterRoutes);
 
 // Inbound webhooks (HMAC-verified; no Bearer auth — request authenticity is proven by signature)
+//
+// DRAIN-ONLY. Reward withdrawals are paid MANUALLY by finance now (see
+// client/referral/referral.controller.ts -> requestWithdrawal), so nothing in
+// this codebase creates a RazorpayX payout any more and no NEW webhook can
+// match a row. It stays mounted purely so payouts that were already in flight
+// when the manual flow shipped still settle (it only acts on rows whose
+// reference_number matches, and is a no-op otherwise).
+//
+// SAFE TO DELETE once prod reports zero rows from:
+//   SELECT id FROM ws_refferal_transaction
+//    WHERE status='pending' AND reference_number IS NOT NULL;
+// Deleting it also retires webhooks/razorpay-payout.controller.ts,
+// client/payment/razorpayx.ts and RAZORPAY_PAYOUT_WEBHOOK_SECRET.
 app.post("/api/v1/webhooks/razorpay-payout", razorpayPayoutWebhook);
 
 

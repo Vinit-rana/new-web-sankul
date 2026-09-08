@@ -43,7 +43,7 @@ const toTransactionDto = (t: RefferalTransaction) => ({
   coin: t.coin,
   type: t.type,
   status: t.status,
-  providerRef: t.providerRef ?? null,
+  referenceNumber: t.referenceNumber ?? null,
   failureReason: t.failureReason ?? null,
   createdAt: t.createdAt ?? null,
   updatedAt: t.updatedAt ?? null,
@@ -71,12 +71,26 @@ export const creditReferrerMysql = async (opts: {
   // (source, orderId, referrer) — order ids collide across the per-type order
   // tables, so `source` is required to tell a course order from an ebook order.
   if (await repo.findCreditByOrder(opts.source, opts.orderId, opts.referrerId)) return;
+
+  // Legacy wording, restored verbatim (websankul-api-staging
+  // routes/v1/websankul/controller.js:937) — lowercase "you" and all. This text
+  // is CUSTOMER-VISIBLE on /client/referral/transactions/:id, and naming the
+  // person you referred is how someone reconciles "why did I get 50 coins?".
+  // The migration had replaced it with "Referral reward (5%) — course purchase",
+  // which drops the only identifying detail. That stays as the fallback for the
+  // rare row where the buyer's name is unavailable, so we never emit a dangling
+  // "...referral to ". Repo slices to 150 for the column.
+  const buyer = await repo.findRewardCustomer(opts.buyerId);
+  const buyerName = buyer?.fullName?.trim();
+
   await repo.creditReferralReward({
     referrerId: opts.referrerId,
     source: opts.source,
     orderId: opts.orderId,
     coin,
-    description: `Referral reward (${pct}%) — ${opts.source} purchase`,
+    description: buyerName
+      ? `Congratulations! you have been rewarded for the referral to ${buyerName}`
+      : `Referral reward (${pct}%) — ${opts.source} purchase`,
   });
 };
 
@@ -205,7 +219,7 @@ export const generateReferralCode = async (
   };
 };
 
-// ─── Withdrawal (DB side; the controller handles RazorpayX + refund) ─────────
+// ─── Withdrawal (DB side; payouts are manual — admin settles from the queue) ──
 export const getRewardPoints = async (customerId: number): Promise<number | null> => {
   const c = await repo.findRewardCustomer(customerId);
   return c ? c.rewardPoints ?? 0 : null;
@@ -224,9 +238,19 @@ export const createWithdrawal = async (input: {
   return toTransactionDto(t);
 };
 
-export const attachProviderRef = (transactionId: number, providerRef: string) =>
-  repo.setProviderRef(transactionId, providerRef);
+/**
+ * @deprecated Belonged to the retired automated RazorpayX payout path. Payouts
+ * are manual now and `reference_number` is written by the admin mark-paid endpoint
+ * (as the UTR) via `adminUpdateWithdrawalStatus`. No callers remain.
+ */
+export const attachReferenceNumber = (transactionId: number, referenceNumber: string) =>
+  repo.setReferenceNumber(transactionId, referenceNumber);
 
+/**
+ * @deprecated Belonged to the retired automated RazorpayX payout path (refund
+ * on payout-initiation failure). The manual flow refunds through
+ * `adminRejectWithdrawal` instead. No callers remain.
+ */
 export const refundWithdrawal = async (input: {
   transactionId: number;
   customerId: number;
@@ -243,33 +267,33 @@ export const refundWithdrawal = async (input: {
 };
 
 // ─── Webhook (payout status flip by provider ref) ────────────────────────────
-export const findTransactionByProviderRef = async (providerRef: string) => {
-  const t = await repo.findTransactionByProviderRef(providerRef);
+export const findTransactionByReferenceNumber = async (referenceNumber: string) => {
+  const t = await repo.findTransactionByReferenceNumber(referenceNumber);
   return t ? toTransactionDto(t) : null;
 };
 
 export const markPayoutStatus = (
-  providerRef: string,
+  referenceNumber: string,
   status: "successful" | "failed",
   reason?: string
-) => repo.setStatusByProviderRef(providerRef, status, reason);
+) => repo.setStatusByReferenceNumber(referenceNumber, status, reason);
 
 /**
- * Webhook handler: flip a PENDING withdrawal by providerRef. On success → mark
+ * Webhook handler: flip a PENDING withdrawal by referenceNumber. On success → mark
  * successful. On failure → refund the customer's points (if DEBIT) + mark failed.
  * Idempotent: returns a status so the controller can ack appropriately.
  */
 export const applyPayoutWebhook = async (
-  providerRef: string,
+  referenceNumber: string,
   outcome: "successful" | "failed",
   failureReason?: string
 ): Promise<"unknown" | "already" | "ok"> => {
-  const t = await repo.findTransactionByProviderRef(providerRef);
+  const t = await repo.findTransactionByReferenceNumber(referenceNumber);
   if (!t) return "unknown";
   if (t.status !== "pending") return "already";
 
   if (outcome === "successful") {
-    await repo.setStatusByProviderRef(providerRef, "successful");
+    await repo.setStatusByReferenceNumber(referenceNumber, "successful");
     return "ok";
   }
   // failed/reversed/rejected → refund (DEBIT only) + mark failed, atomic.
@@ -358,13 +382,17 @@ const toAdminTxnDto = (t: any) => ({
     : String(t.customerId),
 });
 
+// Whitelist shared by EVERY admin status filter — the transactions list, the
+// withdrawal report and the CSV — so they can never drift apart.
+const WITHDRAWAL_STATUSES = ["pending", "successful", "failed", "rejected"];
+
 export const adminListTransactions = async (q: {
   customerId?: string; type?: string; status?: string; fromDate?: string; toDate?: string; page: number; limit: number;
 }) => {
   const opts = {
     customerId: q.customerId ? parseId(q.customerId) ?? undefined : undefined,
     type: (q.type === "credit" || q.type === "debit" ? q.type : undefined) as "credit" | "debit" | undefined,
-    status: (["pending", "successful", "failed"].includes(q.status ?? "") ? q.status : undefined) as "pending" | "successful" | "failed" | undefined,
+    status: (WITHDRAWAL_STATUSES.includes(q.status ?? "") ? q.status : undefined) as "pending" | "successful" | "failed" | "rejected" | undefined,
     from: q.fromDate ? new Date(q.fromDate) : undefined,
     to: q.toDate ? new Date(q.toDate) : undefined,
     skip: (q.page - 1) * q.limit,
@@ -376,22 +404,31 @@ export const adminListTransactions = async (q: {
 
 export const adminGetTransactionRaw = (id: number) => repo.findTransactionById(id);
 
-export const adminUpdateWithdrawalStatus = async (id: number, status: string, description?: string) => {
+export const adminUpdateWithdrawalStatus = async (
+  id: number,
+  status: string,
+  referenceNumber?: string
+) => {
   const s = ["pending", "successful", "failed"].includes(status) ? (status as any) : null;
   if (!s) return { ok: false as const, reason: "bad_status" as const };
   const t = await repo.findTransactionById(id);
   if (!t) return { ok: false as const, reason: "not_found" as const };
   if (t.type !== "debit") return { ok: false as const, reason: "not_debit" as const };
-  const updated = await repo.updateTransactionStatus(id, s, description);
+  // Payouts are manual: `referenceNumber` is the UTR/bank reference the admin types
+  // in when marking the transfer as paid. Trimmed-empty means "not provided" so
+  // a blank field never wipes a reference already recorded.
+  const ref = referenceNumber?.trim() || undefined;
+  const updated = await repo.updateTransactionStatus(id, s, ref);
   return { ok: true as const, data: toTransactionDto(updated) };
 };
 
-export const adminRejectWithdrawal = async (id: number) => {
+export const adminRejectWithdrawal = async (id: number, reason?: string) => {
   const t = await repo.findTransactionById(id);
   if (!t) return { ok: false as const, reason: "not_found" as const };
   if (t.type !== "debit") return { ok: false as const, reason: "not_debit" as const };
+  // Still pending-only, so a double-click can't re-refund an already-rejected row.
   if (t.status !== "pending") return { ok: false as const, reason: "not_pending" as const };
-  await repo.rejectWithdrawal({ id, customerId: t.customerId, amount: t.coin });
+  await repo.rejectWithdrawal({ id, customerId: t.customerId, amount: t.coin, reason: reason?.trim() || undefined });
   return { ok: true as const };
 };
 
@@ -425,7 +462,7 @@ const fmtExportDate = (d: Date | string | null | undefined): string => {
 export const adminWithdrawalsReport = async (q: {
   status?: string; fromDate?: string; toDate?: string; search?: string; page: number; limit: number;
 }) => {
-  const status = ["pending", "successful", "failed"].includes(q.status ?? "") ? q.status : undefined;
+  const status = WITHDRAWAL_STATUSES.includes(q.status ?? "") ? q.status : undefined;
   const { from, to } = parseReportWindow(q.fromDate, q.toDate);
   const base = { status, from, to, search: q.search };
   const [rows, total] = await Promise.all([
@@ -442,7 +479,7 @@ export const adminWithdrawalsReport = async (q: {
     branchName: r.branchName ?? null,
     coin: num(r.coin),
     status: r.status,
-    providerRef: r.providerRef ?? null,
+    referenceNumber: r.referenceNumber ?? null,
     failureReason: r.failureReason ?? null,
     referralCode: r.referralCode ?? null,
     customerId: r.customerId != null ? String(r.customerId) : null,
@@ -452,10 +489,12 @@ export const adminWithdrawalsReport = async (q: {
   return { data, total };
 };
 
-export const adminWithdrawalsCsv = async (q: { status?: string; fromDate?: string; toDate?: string }): Promise<string> => {
-  const status = ["pending", "successful", "failed"].includes(q.status ?? "") ? q.status : undefined;
+export const adminWithdrawalsCsv = async (q: { status?: string; fromDate?: string; toDate?: string; search?: string }): Promise<string> => {
+  const status = WITHDRAWAL_STATUSES.includes(q.status ?? "") ? q.status : undefined;
   const { from, to } = parseReportWindow(q.fromDate, q.toDate);
-  const rows = await repo.withdrawalRows({ status, from, to });
+  // `search` must reach SQL here too, or the export silently returns rows the
+  // filtered table on screen does not show.
+  const rows = await repo.withdrawalRows({ status, from, to, search: q.search });
   const header = ["Bank Account Holder Name", "Bank Account Number", "IFSC Code", "Amount", "Status", "Date"];
   // Low-volume report → a single batch is fine (withdrawalRows is already uncapped).
   async function* rowBatches() {

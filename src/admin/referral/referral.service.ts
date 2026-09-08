@@ -97,11 +97,15 @@ export const listTransactions = async (query: ListTransactionsQuery) => {
 
 export const updateWithdrawalStatus = async (
   id: string,
-  validated: { status: string; description?: string }
+  validated: { status: string; referenceNumber?: string }
 ) => {
   const numId = parseId(id);
   if (!numId) throw new HttpError(400, "Invalid transaction id.");
-  const r = await refSql.adminUpdateWithdrawalStatus(numId, validated.status, validated.description);
+  const r = await refSql.adminUpdateWithdrawalStatus(
+    numId,
+    validated.status,
+    validated.referenceNumber
+  );
   if (!r.ok) {
     if (r.reason === "not_found") throw new HttpError(404, "Transaction not found.");
     if (r.reason === "not_debit") throw new HttpError(400, "Only debit withdrawal transactions can have status updated.");
@@ -110,10 +114,10 @@ export const updateWithdrawalStatus = async (
   return r.data;
 };
 
-export const rejectWithdrawal = async (id: string) => {
+export const rejectWithdrawal = async (id: string, reason?: string) => {
   const numId = parseId(id);
   if (!numId) throw new HttpError(400, "Invalid transaction id.");
-  const r = await refSql.adminRejectWithdrawal(numId);
+  const r = await refSql.adminRejectWithdrawal(numId, reason);
   if (!r.ok) {
     if (r.reason === "not_found") throw new HttpError(404, "Transaction not found.");
     if (r.reason === "not_debit") throw new HttpError(400, "Only withdrawal debits can be rejected.");
@@ -159,11 +163,14 @@ export interface WithdrawalsCsvQuery {
   createdFrom?: string;
   createdTo?: string;
   status?: string;
+  // Same semantics as the list endpoint: blank/absent => no predicate (full
+  // export). Without this the CSV ignores the search box and over-exports.
+  search?: string;
 }
 
 export const buildWithdrawalsCsv = async (query: WithdrawalsCsvQuery): Promise<string> => {
-  const { fromDate, toDate, createdFrom, createdTo, status } = query;
-  return refSql.adminWithdrawalsCsv({ status, fromDate: createdFrom ?? fromDate, toDate: createdTo ?? toDate });
+  const { fromDate, toDate, createdFrom, createdTo, status, search } = query;
+  return refSql.adminWithdrawalsCsv({ status, fromDate: createdFrom ?? fromDate, toDate: createdTo ?? toDate, search });
 };
 
 // ──────────────────────────────────────────────────────────────────────────────

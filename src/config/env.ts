@@ -41,7 +41,10 @@ const PROD_FEATURE_VARS: { key: string; feature: string; profiles: ("api" | "wor
   { key: "FIREBASE_SERVICE_ACCOUNT", feature: "push notifications", profiles: ["worker"] },
   { key: "DO_ACCESS_KEY_ID", feature: "file uploads (DigitalOcean Spaces)", profiles: ["api", "worker"] },
   { key: "DO_SECRET_ACCESS_KEY", feature: "file uploads (DigitalOcean Spaces)", profiles: ["api", "worker"] },
-  { key: "RAZORPAY_PAYOUT_WEBHOOK_SECRET", feature: "referral payouts", profiles: ["api"] },
+  // Drain-only: withdrawals are paid manually now, so this is needed solely to
+  // verify webhooks for payouts already in flight. Drop it (and the warning)
+  // when the payout route is deleted from app.ts.
+  { key: "RAZORPAY_PAYOUT_WEBHOOK_SECRET", feature: "referral payouts (drain-only)", profiles: ["api"] },
   { key: "METRICS_TOKEN", feature: "/metrics scrape auth", profiles: ["api"] },
 ];
 

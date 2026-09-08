@@ -1,6 +1,14 @@
 // RazorpayX (Payouts) HTTP client. The `razorpay` npm SDK only covers
 // the standard Payments product; Contacts / Fund Accounts / Payouts live
 // on the X API and must be called over HTTP with Basic Auth.
+//
+// ⚠️ DORMANT — NO CALLERS. Reward withdrawals moved to a manual (offline) bank
+// transfer worked from the admin queue, so nothing calls these any more. Kept
+// only as the counterpart to the drain-only payout webhook still mounted in
+// app.ts; delete this file together with that route. Note `accountNumber()`
+// reads RAZORPAYX_ACCOUNT_NUMBER, which was never registered in config/env.ts
+// — irrelevant while dormant, but it must be added there if payouts are ever
+// re-enabled, or it will throw at payout time instead of at boot.
 
 import { callOutbound } from "../../libs/outbound";
 

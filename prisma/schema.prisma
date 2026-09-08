@@ -97,6 +97,7 @@ enum RefferalTransactionStatus {
   pending
   successful
   failed
+  rejected
 }
 
 enum OsType {
@@ -563,7 +564,7 @@ model RefferalTransaction {
   coin          Int                       @map("coin")
   type          RefferalTransactionType   @map("type")
   status        RefferalTransactionStatus @map("status")
-  providerRef   String?                   @map("provider_ref") @db.VarChar(255)
+  referenceNumber String?                 @map("reference_number") @db.VarChar(255)
   failureReason String?                   @map("failure_reason") @db.VarChar(500)
   createdAt     DateTime?                 @map("created_at")
   updatedAt     DateTime?                 @map("updated_at")

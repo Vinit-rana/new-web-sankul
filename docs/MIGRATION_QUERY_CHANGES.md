@@ -15,6 +15,573 @@
 
 ---
 
+## 2026-09-08 (i) — repo-wide dead-scaffolding removal: the `isMysqlModule` flag layer is gone
+
+> **No DDL. No query changes. No index changes. No response-contract changes.**
+> Logged here because it deletes the last remnants of the migration switch itself,
+> which every module service used to carry.
+
+### What was removed
+
+The Mongo→MySQL migration completed on 2026-07-01 (mongoose uninstalled, `src/models/**`
+and `src/config/migration.ts` deleted). The **per-module flag layer survived it** and had
+been dead ever since:
+
+| Symbol class | Count | State |
+|---|---|---|
+| `export const <X>_MODULE = "<x>"` | 80 | referenced exactly once — by its own definition |
+| `export const is<X>Mysql = (): boolean => true` | 82 | hardcoded `true`, never invoked |
+| `is<X>Mysql` re-exports | 4 | ditto |
+| unused imports of the above | 2 | `ebook.controller.ts`, `educator.controller.ts` |
+
+`isMysqlModule()` — the function these fed — **no longer exists anywhere in `src/`**; the
+only surviving matches were in comments. `MIGRATION_MYSQL_MODULES` is absent from both
+`config/env.ts` and `.env.example`. Nothing branched on any of it.
+
+Also removed: **71 other dead exports** (AST-verified zero references repo-wide, including
+`scripts/` and dynamic `await import()`). Densest clusters were speculative read surfaces
+built during migration whose caller never arrived — `commerce-price` (7), `commerce-ebook-sub`
+(6), `commerce-subscription` (3).
+
+### Query-level impact: none
+
+No Prisma call, `where` clause, `select`, ordering, count semantics or transformer was
+touched. The deleted repository helpers (`findPriceById`, `listSubscriptionsByCustomer`,
+`getActiveEbookSubscription`, …) had **no callers**, so no query that actually runs changed
+shape. Verified: the full route dump (`yarn postman:routes`, which loads `app.ts` → every
+router → controller → service) returns the **same 868 routes**, byte-identical, before and
+after.
+
+### Deliberately NOT touched
+
+- **Referral / RazorpayX cluster** — concurrent in-flight work (the
+  `provider_ref → reference_number` rename). `REFERRAL_MODULE` + `isReferralMysql` and
+  referral's own `fmtExportDate` copy are still in place; fold them into that branch.
+- **StreamOS v1 exports** (`createVideoUploadUrl`, `deleteWebhook`, `registerVideo`),
+  **BullMQ queue accessors**, **`newEncryptor`**, **`tokenRevocation`**, **`scrub`** — dead by
+  the scan, but they sit in the areas CLAUDE.md says to ask about first (video delivery,
+  background jobs, auth, security). Left alone.
+- **Test seams** (`_invalidateCacheForTest`, `_resetRings`, `__test__`) and the
+  Prisma-enum-pinning types `_OrderStatus` / `_OrderType` / `_PaymentMethod`.
+
+### Duplicate logic consolidated (behaviour-preserving)
+
+Three copy-paste clusters that could have drifted into **wrong output**, not just extra lines:
+
+- `MONTH_LABELS` / `weekOfMonth` / `weekRange` — **3 copies → `utils/dateBuckets`**. The
+  daily-quiz and free-test drill-downs computed week boundaries independently; they agreed,
+  but nothing enforced it. `client/exam/exam.controller.ts`'s copy was additionally *dead*
+  (it delegates to `svcGetDailyExams`) and was deleted outright.
+- `fmtExportDate` + `IST_OFFSET_MS` — **6 copies → `utils/csvExport`** (referral's left in
+  place, see above). Signature widened to the union five of six already used
+  (`Date | string | null | undefined`); `admin-subscription`'s narrower `Date | null |
+  undefined` was the outlier and its body already went through `new Date(d)`.
+- `formatZodErrors` — **5 byte-identical copies → `httpResponse.formatZodIssues`**. The
+  `errors:` envelope on those 30 admin endpoints is **unchanged**; it was NOT normalised onto
+  the `validate` middleware's `messages:` map, which would have been a breaking API change.
+  It is also deliberately not merged with the neighbouring `formatZodError`, which differs on
+  two reachable edges (root-path key `""` vs `"_"`; last-wins vs first-wins on a repeated
+  field). Equivalence to the original was asserted on both edge cases before switching.
+
+### Also in this pass
+
+- Dependencies dropped: `os` (a browserify shim permanently shadowed by Node's builtin —
+  never loaded), `node-cron` (zero references), `pdfkit` (superseded by the ejs+puppeteer
+  receipt renderer), plus `@types/pdfkit` and 4 stub `@types` packages whose runtimes ship
+  their own definitions.
+- `.tools/k6` (65 MB binary) untracked + gitignored. **`old_db/*.sql` was NOT untracked** —
+  `yarn db:import` and `seed-exam-category-pivot.ts` read those files.
+- `.env.example`: documented the five warn-only `PROD_FEATURE_VARS` (`SMTP_HOST`,
+  `FIREBASE_SERVICE_ACCOUNT`, `DO_ACCESS_KEY_ID`, `DO_SECRET_ACCESS_KEY`, `METRICS_TOKEN`)
+  that `config/env.ts` checks but the example file never listed.
+- `scripts/verify-wave8-ddl-sql.ts`: dropped its now-vacuous `is*Mysql()` guard loop (the
+  only script that actually called the flags).
+- `CLAUDE.md`: corrected 21 stale claims — it still described a live dual-DB architecture
+  and its rules ordered contributors to *preserve* the flag layer, which is why this
+  scaffolding survived three months past the migration. Also corrected ESM → CommonJS
+  (package.json has no `"type"`, tsconfig is `"module":"commonjs"`) and `MONGODB_URI` →
+  `DATABASE_URL` as the always-required var.
+
+### Verification
+
+`yarn typecheck` + `yarn build` + 868-route API-surface diff, re-run green after **every**
+step. The route diff caught the one real regression during the work: two controllers
+*imported* a flag without calling it, so an invocation-only scan missed them.
+
+**Emitted-JS differential.** The whole tree was compiled twice — once from the git index
+(without this change) and once from the working tree — and the two `dist/` outputs diffed.
+This bounds the blast radius exactly, rather than by assertion:
+
+| Emitted `.js` | Files | Meaning |
+|---|---|---|
+| byte-identical | **518** | cannot behave differently |
+| differ only by the deleted symbol + tsc's `exports.… = void 0;` header line | **101** | retained logic untouched |
+| comment-only / never-called code removed | **2** | `promocode.validation`, `client/exam/exam.controller` |
+| **genuinely changed logic** | **13** | only the three dedupe clusters |
+
+The 13 are `utils/csvExport` + 5 report services (`fmtExportDate`), `utils/httpResponse` + 5
+admin controllers (`formatZodIssues`), and `client-exam.service` (`dateBuckets`). Each was
+asserted equal to the pre-change implementation at runtime: 13 date cases
+(null/invalid/string/leap-day/year-rollover), 731 days of `weekOfMonth`, 120 `weekRange`
+year/month/week ranges, and 6 Zod-issue cases covering both edges where `formatZodIssues`
+deliberately differs from `formatZodError`.
+
+Two further sweeps came back clean: **no `require()` of a removed dependency survives in
+`dist`** (the two `require("os")` hits are Node's builtin, which is what they always
+resolved to — the npm `os` shim was never loaded), and of **232 deleted symbols, zero** are
+referenced as string literals anywhere in `src`/`scripts`/`dist`. The single hit was a stale
+docstring in `client-search-history.service.ts` claiming the `isMysqlModule` gate was "kept
+for call-site consistency"; corrected here.
+
+### Not covered by any of the above
+
+No handler was executed against a real database — the checks are static plus unit-level
+equivalence. Before this reaches prod, exercise: (1) CSV **and** XLSX download on all five
+report endpoints (book orders, ebook/test-series/live-course/course subscriptions) — the date
+column is the exact thing that changed; (2) a 422 from any role/permission/permissionCategory/
+video/videoCategory endpoint, confirming the body still carries `errors:` and not `messages:`;
+(3) the daily-quiz and free-test drill-downs at all four levels, week 5 being the edge;
+(4) a real boot with live env; (5) `yarn install --frozen-lockfile` on the deploy box, since
+`yarn.lock` lost 8 packages and `deploy:prod` runs exactly that.
+
+---
+
+## 2026-09-08 (h) — referral-credit description: legacy wording restored verbatim
+
+> **Code-only, no DDL.** Changes the text written to `description` on referral credits.
+> Existing rows are not rewritten.
+
+The migration had replaced legacy's customer-facing credit text with a systemy one, dropping
+the only identifying detail — **who** the reward came from:
+
+```
+legacy:  "Congratulations! you have been rewarded for the referral to Priya Patel"
+was:     "Referral reward (5%) — course purchase"
+now:     "Congratulations! you have been rewarded for the referral to Priya Patel"
+```
+
+Restored **verbatim** at user request, lowercase "you" included (source:
+`websankul-api-staging/src/routes/v1/websankul/controller.js:937`). This string is
+customer-visible on `GET /client/referral/transactions/:id`, and naming the referred buyer is
+how someone reconciles "why did I get 100 coins?".
+
+The name is the **buyer** (the person who was referred), matching legacy's
+`subscriptionRecord.customer.fullName` — not the referrer, who is the one being credited.
+
+Implementation reuses the existing `repo.findRewardCustomer` (already selects `fullName`) —
+one PK lookup on the purchase path, no new repository function. The previous systemy string is
+kept as the fallback when the buyer has no usable name, so a dangling `"...referral to "` can
+never be emitted. `creditReferralReward` already slices to 150 for the column.
+
+### Verified
+
+```
+buyer=472338 "Sanjay"  referrer=472335  program reward=10%
+description: "Congratulations! you have been rewarded for the referral to Sanjay"
+PASS exact legacy wording
+```
+
+`yarn typecheck` = 0 errors.
+
+### Still diverged from legacy (not changed)
+
+The wallet-redemption description was reworded the same way and was left alone — no request to
+restore it:
+
+```
+legacy: "You have used wallet balance for the subscription."
+now:    "Wallet redeemed — course purchase"
+```
+
+---
+
+## 2026-09-08 (g) — mark-paid no longer overwrites the customer's ledger text
+
+> **Code-only, no DDL.** Removes a field from an admin request body.
+
+`description` on `ws_refferal_transaction` is the CUSTOMER's ledger text
+("You have requested for bank transfer."), rendered on
+`GET /client/referral/transactions/:id`. The mark-paid endpoint accepted an optional
+`description` and overwrote it, which meant:
+
+* unvalidated admin free-text landed on a customer-facing screen, and
+* the withdrawal report DTO has **no** `description` field, so finance could never see back
+  what had been written — write-only from the screen it was typed on.
+
+The UTR (`reference_number`) is what finance actually needs recorded, and it already exists.
+
+**Removed** `description` from `updateTransactionStatusSchema`,
+`adminUpdateWithdrawalStatus`, `repo.updateTransactionStatus`, the admin service passthrough,
+and the panel's Mark-as-Paid modal. `PATCH /admin/referrals/transactions/:id/status` now takes
+`{ status, referenceNumber? }` only.
+
+Untouched: `description` is still written by withdrawal create, referral credit, wallet debit
+and the admin reward-adjust endpoint (where it is required and labels the row rather than
+overwriting one).
+
+### Verified
+
+| Assertion | Result |
+|---|---|
+| after mark-paid, description still `"You have requested for bank transfer."` | ✅ |
+| UTR recorded on the same call | ✅ |
+
+`yarn typecheck` = 0 errors. Admin `npm run build` clean.
+
+---
+
+## 2026-09-08 (f) — concurrent withdrawals could be paid twice (conditional debit)
+
+> **Code-only, no DDL.** Response contract unchanged — same 400, same message.
+
+`requestWithdrawal` checked the balance in the controller, *before* the transaction:
+
+```ts
+const points = await svcGetRewardPoints(cid);
+if (amount > points) return res.status(400)...      // check
+...
+await svcCreateWithdrawal(...)                       // debit, later
+```
+
+Two taps in the same second both pass the check, both debit, and the balance goes negative
+with **two payable rows**. Survivable while RazorpayX existed (the gateway bounced the second
+payout); with manual payouts there is nothing left to catch it — finance sees two rows in the
+CSV and pays both.
+
+### Fix — one guard where every caller routes through
+
+`repo.createWithdrawal` now re-checks the balance **in the statement that decrements it**:
+
+```ts
+const debited = await tx.customer.updateMany({
+  where: { id: input.customerId, rewardPoints: { gte: input.amount } },
+  data:  { rewardPoints: { decrement: input.amount } },
+});
+if (debited.count === 0) throw new InsufficientRewardPoints();
+```
+
+`updateMany` with a `where` guard is a single conditional UPDATE, so the loser matches zero
+rows instead of driving the balance negative. The controller maps
+`InsufficientRewardPoints` to the **same 400 and the same message** the pre-check returns, so
+the API is byte-identical either way.
+
+The controller pre-check is kept: it is the common, non-racing path and avoids loading the
+bank account for an obviously-underfunded request. The repository guard is the correctness
+boundary.
+
+### Verified — two simultaneous 1000-coin withdrawals against a 1000-coin balance
+
+| Assertion | Result |
+|---|---|
+| exactly 1 succeeded | ✅ |
+| exactly 1 failed with `InsufficientRewardPoints` | ✅ |
+| balance 1000 → **0**, never −1000 | ✅ |
+| payable rows: **1**, never 2 | ✅ |
+
+`yarn typecheck` = 0 errors.
+
+### Also — admin panel description limit aligned
+
+`AdjustRewardsModal` validated `> 500` with `maxLength={500}` while the backend is
+`z.string().min(1).max(150)`, so 151–500 characters passed the form and then 422'd on the
+server. FE now 150 in both places. Admin `npm run build` clean.
+
+---
+
+## 2026-09-08 (e) — third status whitelist missed: `?status=rejected` was ignored on `/admin/referrals/transactions`
+
+> **Code-only, no DDL.** Filter-contract fix. Follow-up to entry (b).
+
+Entry (b) added `rejected` to the whitelists in `adminWithdrawalsReport` and
+`adminWithdrawalsCsv` and claimed a shared constant stopped the two from drifting. There was
+a **third** hardcoded copy that was missed:
+
+```ts
+// referral.service.ts, adminListTransactions — BEFORE
+status: (["pending", "successful", "failed"].includes(q.status ?? "") ? q.status : undefined)
+```
+
+`GET /api/v1/admin/referrals/transactions?status=rejected` therefore dropped the filter
+**silently** and returned the full unfiltered list with a `200` — the documented
+unknown-status behaviour, which on screen reads as "the filter is broken" rather than "bad
+input".
+
+### Fix
+
+`WITHDRAWAL_STATUSES` is now hoisted above its first use and consumed by **all three** admin
+status filters (`referral.service.ts:373`, used at `:381`, `:452`, `:480`) — the transactions
+list, the withdrawal report and the CSV. There is no longer a fourth copy anywhere.
+
+Two repository signatures were too narrow to accept the new value and were widened
+(`referral.repository.ts:152,173` — `adminListTransactions` / `adminCountTransactions`):
+
+```ts
+status?: "pending" | "successful" | "failed" | "rejected"
+```
+
+`yarn typecheck` surfaced both of these as errors rather than letting the cast paper over
+them, which is what caught the drift completely.
+
+### Note on the whitelists that are NOT shared
+
+`updateTransactionStatusSchema` (`admin/referral/referral.validation.ts:19-22`) deliberately
+stays `pending | successful` only — `rejected` must remain reachable solely through the reject
+endpoint so the refund can never be bypassed. Do not fold that one into
+`WITHDRAWAL_STATUSES`.
+
+`yarn typecheck` = 0 errors.
+
+---
+
+## 2026-09-08 (d) — `provider_ref` → `reference_number` (column + API field)
+
+> **DDL REQUIRED** — `docs/migration/schema-changes/2026-09-08_referral_transaction_rename_provider_ref.sql`.
+> **BREAKING rename. DDL and backend build MUST deploy in the SAME window**, and the admin
+> panel with (or after) them. Unlike the additive ENUM in entry (b), a rename is backward
+> compatible in NEITHER direction:
+> * DDL first, old code running → old code selects `provider_ref` → **1054**
+> * Build first, DDL not applied → new code selects `reference_number` → **1054**
+
+The column was named for the retired RazorpayX integration, which wrote its payout id there.
+Payouts are manual now and it holds the **bank UTR** an admin types on mark-paid.
+`reference_number` is true for both legacy `pout_*` ids and new UTRs — `utr` was rejected
+because it would be a lie for the legacy rows.
+
+| Layer | `provider_ref` / `providerRef` → |
+|---|---|
+| MySQL column | `reference_number` |
+| `prisma/schema.prisma` | `referenceNumber String? @map("reference_number") @db.VarChar(255)` |
+| `referral.repository.ts` | 14 identifiers + the report SQL alias (`t.reference_number AS referenceNumber`) |
+| `referral.service.ts` | 24 identifiers — client DTO, report DTO, webhook helpers |
+| `admin/referral/referral.{service,validation}.ts` | Zod input + passthrough |
+| `webhooks/razorpay-payout.controller.ts` | 7 identifiers (drain-only path, still compiles) |
+| `client/referral/referral.controller.ts` | the list `omit` key |
+| Admin panel (`~/websankul`) | 16 identifiers across 5 files |
+
+**No alias, no deprecation window.** `providerRef` is not accepted on input nor emitted on
+output anywhere. It was introduced the same day (entry a) and the only consumer is the admin
+panel, which is renamed in lockstep — so there is no field in the wild to keep compatible.
+
+Pure `RENAME COLUMN`: no data read, rewritten or lost; type unchanged.
+
+### Verified after applying the DDL locally
+
+| Assertion | Result |
+|---|---|
+| Mark-paid stores a trimmed UTR | ✅ `"  N226…  "` → `N2260908123456` |
+| DB column is `reference_number` | ✅ |
+| `providerRef` absent from every DTO | ✅ (client detail, admin report) |
+| Blank value still does not wipe a recorded UTR | ✅ |
+| Admin report + client detail emit `referenceNumber` | ✅ |
+
+`yarn typecheck` = 0 errors. Admin panel `npm run build` = clean (that repo has no typecheck;
+build is its only gate).
+
+---
+
+## 2026-09-08 (c) — `rejected` withdrawals hidden from the client surface
+
+> **Code-only, no DDL.** Query-level change to three client-facing reads.
+
+Follow-up to entry (b), by product decision: the app must not receive the new `rejected`
+status at all. Keeping the row for finance while hiding it from the customer makes (b) a
+**zero-change** release for the client app — the customer's experience is identical to the
+old delete behaviour (coins return, no ledger entry).
+
+`referralRepository.clientVisible = { status: { not: "rejected" } }` is now spread into all
+three client-facing queries:
+
+| Function | Effect |
+|---|---|
+| `listTransactions` | rejected rows excluded from `GET /client/referral/transactions` |
+| `countTransactions` | **must match the list** or `pagination.total` disagrees with the rows returned |
+| `findTransaction` | `GET /client/referral/transactions/:id` 404s on a rejected row (a direct id lookup would otherwise leak what the list hides) |
+
+Admin reads are untouched: `adminWithdrawalsReport`, `adminWithdrawalsCsv`,
+`findTransactionById` and `?status=rejected` all still see the row.
+
+`status` is `NOT NULL` in both `schema.prisma` and MySQL, so Prisma's `not` is safe here — on
+a **nullable** column `{ not: x }` silently drops NULL rows too (see
+`project_prisma_not_excludes_null`).
+
+### Verified on real rows
+
+| Assertion | Result |
+|---|---|
+| rejected absent from client list | ✅ |
+| successful + pending still present | ✅ |
+| `pagination.total` (2) matches rows returned (2) | ✅ |
+| client detail of a rejected id → `null` (404) | ✅ |
+| admin report `?status=rejected` still returns it | ✅ |
+
+`yarn typecheck` = 0 errors.
+
+### Consequence to be aware of
+
+The reject `reason` is now **internal**. The customer is never shown why a withdrawal was
+declined — they only see the coins return. If that should reach them, it needs a
+notification, which does not exist today.
+
+---
+
+## 2026-09-08 (b) — Withdrawal reject: `rejected` state instead of deleting the row
+
+> **DDL REQUIRED** — `docs/migration/schema-changes/2026-09-08_referral_transaction_rejected_status.sql`.
+> **Apply the DDL BEFORE deploying the build.** A widened ENUM is invisible to the old
+> code; the reverse order is not safe (the new build would write a value the column
+> cannot hold). Purely additive — no existing row changes value.
+
+Closes the caveat logged in entry (a) and answers
+`websankul/docs/backend-requests/2026-09-08-referral-withdrawal-rejected-status.md` §1 and §2.
+
+### §1 — reject terminates the row, it no longer deletes it
+
+`rejectWithdrawal` refunded the coins and then `DELETE`d the ledger row, so a rejected
+withdrawal vanished from both the finance report and the customer's own ledger — the
+coins came back with nothing explaining why. With payouts now manual, reject is the only
+failure path, so this was the *only* way a withdrawal could end badly.
+
+| Layer | Change |
+|---|---|
+| `prisma/schema.prisma` | `enum RefferalTransactionStatus` gains `rejected` |
+| `src/shared/enums.ts` | `REJECTED: "rejected"` |
+| `referral.repository.ts` `rejectWithdrawal` | `delete` → `update { status: "rejected", failureReason }`; reward-point increment stays in the SAME `$transaction` |
+| `referral.service.ts` `adminRejectWithdrawal(id, reason?)` | threads the reason; `pending`-only guard unchanged |
+| `admin/referral/referral.service.ts` | `rejectWithdrawal(id, reason?)` |
+| `admin/referral/referral.controller.ts` | parses the optional `reason` |
+| `admin/referral/referral.validation.ts` | new `rejectWithdrawalSchema` — `reason` optional, trimmed, ≤500 |
+
+`failed` was deliberately NOT reused: it means "the payout was attempted and bounced"
+(the retired RazorpayX path). Merging the two would make "we never sent this"
+indistinguishable from "the bank returned it" in the same report.
+
+```
+POST /api/v1/admin/referrals/transactions/:id/reject
+Idempotency-Key: <uuid>          (unchanged, still required)
+{ "reason": "Bank account name mismatch" }     ← NEW, optional, ≤500
+```
+
+Blank/absent reason stores NULL and never fails the request. Non-`pending` rows still
+400, so a double-click cannot re-refund.
+
+`rejected` is reachable ONLY through the reject endpoint — `updateTransactionStatusSchema`
+still accepts `pending | successful` only, so the refund can never be bypassed by a
+status PATCH.
+
+### §2 — withdrawal CSV now honours `search`
+
+`search` was parsed on the list path but dropped before reaching SQL on the CSV path, so
+a filtered table exported as the full unfiltered set. The repository already supported it
+(`withdrawalRows` builds LIKE tokens over account holder name / account number / IFSC /
+customer name / phone / referral code) — this was pure plumbing.
+
+- `WithdrawalsCsvQuery` gains `search`; `buildWithdrawalsCsv` forwards it
+- `adminWithdrawalsCsv` forwards it into `repo.withdrawalRows`
+
+Both the report and the CSV status whitelist now come from one shared
+`WITHDRAWAL_STATUSES` constant (`pending|successful|failed|rejected`) so the two can
+never drift apart again. Unknown values are still dropped silently (unchanged, by design).
+
+### Verified against a real MySQL row (not just typecheck)
+
+| Assertion | Result |
+|---|---|
+| Row survives the reject | ✅ |
+| `status` = `rejected`, `failureReason` stored + trimmed | ✅ |
+| Coins refunded 5000 → 6000 | ✅ |
+| Double-reject → `not_pending`, points stay 6000 (no double refund) | ✅ |
+| `?status=rejected` returns it / `?status=pending` excludes it | ✅ |
+| CSV `search` match → 1 row, no-match → header only, unfiltered → 3 | ✅ |
+
+`yarn typecheck` = 0 errors.
+
+### ⚠ Client-app impact — RN team must be told
+
+`GET /client/referral/transactions` and `/transactions/:id` now return a `status` the app
+has never seen. Any `status === 'failed' ? … : 'Paid'` branching renders a rejected row as
+**"Paid"**. Suggested copy: *"Rejected — coins refunded"*.
+
+Note the LIST endpoint omits `failureReason` (deliberate payload trim, see
+`docs/api-optimization/GET_client_referral_transactions.md`); only `/transactions/:id`
+returns it. Showing the reason in a list row would need that field added back.
+
+---
+
+## 2026-09-08 — Reward withdrawals: automated RazorpayX payout → manual bank transfer
+
+> **Code-only, no DDL.** No column added, dropped or renamed. `provider_ref` changes
+> *meaning*, not type. Client response shape unchanged.
+
+### Change
+
+Reward withdrawals no longer call a payment gateway. `POST /api/v1/client/referral/withdraw`
+now only **records the request**; finance performs the bank transfer offline and settles the
+row from the admin queue. This restores the legacy (`websankul-api-staging` V2) manual payout
+model on top of the current admin tooling.
+
+**Removed from the request path** (`src/client/referral/referral.controller.ts`):
+
+- `createContact` → `createFundAccount` → `createPayout` (3 outbound RazorpayX calls)
+- `attachProviderRef` on success
+- `refundWithdrawal` + the `502` response on payout-initiation failure
+
+**Unchanged:** the atomic `createWithdrawal` (`reward_points` decrement + `pending` DEBIT row
+carrying the `bank_account` JSON snapshot), all validation, and the `201` envelope. The row
+stays `pending` until an admin acts on it — `pending` is what separates "requested" from
+"actually paid". (Legacy wrote `successful` immediately; that was gap #2 in its own flow doc
+and is deliberately **not** reproduced.)
+
+### Query-level impact
+
+| Query | Before | After |
+|---|---|---|
+| `refferalTransaction.create` (withdrawal) | `status='pending'`, settled by webhook | `status='pending'`, settled by an **admin** |
+| `updateTransactionStatus` | status + description | status + description **+ `provider_ref`** |
+| `findTransactionByProviderRef` | webhook lookup on every payout event | reachable only for pre-cutover in-flight rows |
+| `failWithdrawal` (webhook refund) | fired on `payout.failed/reversed/rejected` | effectively unreachable — see caveat |
+
+`provider_ref` (VARCHAR 255, nullable) was written by RazorpayX as the payout id. It now stores
+the **UTR / bank reference an admin types when marking a transfer paid** — newly accepted as an
+optional `providerRef` on `PATCH /api/v1/admin/referral/transactions/:id/status`. No migration
+is needed: old rows keep their `pout_*` ids, new rows get a UTR, and both are opaque strings to
+every reader. A blank/whitespace value is ignored so it can never wipe a reference already
+recorded.
+
+### Not deleted (deliberate)
+
+`POST /api/v1/webhooks/razorpay-payout` stays **mounted and functional** so payouts already in
+flight at cutover still settle. It is a no-op for everything else (it only matches rows by
+`provider_ref`). `src/client/payment/razorpayx.ts` is retained, dormant, as its counterpart.
+
+Safe to delete both once prod returns zero rows for:
+
+```sql
+SELECT id, customer_id, coin, created_at
+  FROM ws_refferal_transaction
+ WHERE status = 'pending' AND provider_ref IS NOT NULL;
+```
+
+`RAZORPAY_PAYOUT_WEBHOOK_SECRET` is warning-only in `config/env.ts` (not boot-required), so
+nothing breaks at boot either way. `RAZORPAYX_ACCOUNT_NUMBER` is now unused (it was never
+registered in `config/env.ts` — it must be added there if payouts are ever re-enabled, or it
+throws at payout time instead of at boot).
+
+### Caveat carried forward
+
+`adminRejectWithdrawal` → `repo.rejectWithdrawal` **DELETES** the ledger row (refunding the
+coins) rather than marking it `failed`. While the webhook was live, `failWithdrawal` provided a
+non-destructive failure path that kept the row with a `failure_reason`. With payouts manual,
+reject is the **only** failure path, so a declined withdrawal now vanishes from the customer's
+ledger with no explanation and `status='failed'` becomes unreachable in practice. Tracked as a
+follow-up decision — changing it alters what the admin panel sees after a reject.
+
+### Verification status
+
+`yarn typecheck` **has not been run** for this change — the machine's disk filled during
+`yarn install` and no shell command could execute afterwards. Run it before deploying.
+
+---
+
 ## 2026-09-07 — Client app-version `/check` no longer cached
 
 > **Code-only, no DDL, no contract change.** Response shape unchanged.

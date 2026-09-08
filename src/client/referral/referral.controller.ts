@@ -7,7 +7,7 @@ import {
   BLACKLISTED_REFERRAL_WORDS,
 } from "./referral.validation";
 import { lookupIfsc } from "./ifsc";
-import { createContact, createFundAccount, createPayout } from "../payment/razorpayx";
+import { InsufficientRewardPoints } from "../../modules/referral/referral.repository";
 import logger from "../../utils/logger";
 import { getErrorMessage } from "../../utils/httpResponse";
 import { parseListQuery, buildPagination } from "../../utils/listQuery";
@@ -27,8 +27,6 @@ import {
   getTransaction as svcGetTransaction,
   getRewardPoints as svcGetRewardPoints,
   createWithdrawal as svcCreateWithdrawal,
-  attachProviderRef as svcAttachProviderRef,
-  refundWithdrawal as svcRefundWithdrawal,
   generateReferralCode as svcGenerateReferralCode,
 } from "../../modules/referral/referral.service";
 
@@ -82,7 +80,7 @@ export const getMyTransactions = async (req: Request, res: Response) => {
     // MyRewards reads _id/coin/status/createdAt + bankAccount.{bankName,accountNumber}
     // only (see docs/api-optimization/GET_client_referral_transactions.md).
     const data = (items ?? []).map((t: any) => ({
-      ...omit(t, ["orderId", "customerId", "type", "description", "providerRef", "failureReason", "updatedAt"]),
+      ...omit(t, ["orderId", "customerId", "type", "description", "referenceNumber", "failureReason", "updatedAt"]),
       bankAccount: t.bankAccount ? pick(t.bankAccount, ["bankName", "accountNumber"]) : null,
     }));
     return res.status(200).json({
@@ -154,28 +152,30 @@ export const requestWithdrawal = async (req: Request, res: Response) => {
     const bankAccount = await svcGetBankAccount(baId, cid);
     if (!bankAccount) return res.status(404).json({ success: false, message: "Bank account not found." });
 
-    // Atomic: decrement points + create pending DEBIT txn.
-    const txn = await svcCreateWithdrawal({ customerId: cid, amount, bankAccount: bankAccount as any });
-
-    // Razorpay payout outside the DB tx; refund + mark failed on error.
+    // Atomic: decrement points + create pending DEBIT txn carrying a snapshot of
+    // the bank account.
+    //
+    // Payouts are MANUAL (offline). This endpoint only *records the request* —
+    // no money moves here and no payment gateway is called. Finance works the
+    // queue from the admin side:
+    //   GET   /admin/referral/withdrawals[/csv]      -> the pending queue
+    //   PATCH /admin/referral/transactions/:id/status -> mark paid (+ UTR)
+    //   POST  /admin/referral/transactions/:id/reject -> refund the coins
+    // The row therefore stays `pending` until an admin acts on it; `pending` is
+    // what separates "requested" from "actually paid".
+    let txn;
     try {
-      const contact = await createContact({ name: (bankAccount as any).accountHolderName || `${cid}`, referenceId: `cust_${cid}` });
-      const fundAccount = await createFundAccount({
-        contactId: contact.id,
-        accountHolderName: (bankAccount as any).accountHolderName,
-        ifsc: (bankAccount as any).ifscCode,
-        accountNumber: (bankAccount as any).accountNumber,
-      });
-      const payout = await createPayout({ fundAccountId: fundAccount.id, amountInPaise: amount * 100, referenceId: `txn_${txn._id}`, narration: "Reward withdrawal" });
-      await svcAttachProviderRef(Number(txn._id), payout.id);
-      txn.providerRef = payout.id;
-    } catch (payoutErr: any) {
-      logger.error("requestWithdrawal payout failed (sql)", { traceId, customerId, transactionId: txn._id, error: payoutErr?.message });
-      await svcRefundWithdrawal({ transactionId: Number(txn._id), customerId: cid, amount, reason: payoutErr?.message ?? "Payout could not be initiated." });
-      return res.status(502).json({ success: false, message: "Withdrawal could not be initiated. Please try again." });
+      txn = await svcCreateWithdrawal({ customerId: cid, amount, bankAccount: bankAccount as any });
+    } catch (e) {
+      // Lost the race against a concurrent withdraw — same 400 as the pre-check.
+      if (e instanceof InsufficientRewardPoints) {
+        logger.warn("requestWithdrawal lost balance race", { traceId, customerId, amount });
+        return res.status(400).json({ success: false, message: "Your withdrawal request must be less than or equal to your reward points." });
+      }
+      throw e;
     }
 
-    logger.info("requestWithdrawal success (sql)", { traceId, customerId, transactionId: txn._id, amount });
+    logger.info("requestWithdrawal recorded (manual payout queue)", { traceId, customerId, transactionId: txn._id, amount });
     return res.status(201).json({ success: true, data: txn });
   } catch (error: any) {
     if (error.issues) { logger.warn("requestWithdrawal validation failed", { traceId, customerId, issues: error.issues }); return res.status(400).json({ success: false, errors: error.issues }); }

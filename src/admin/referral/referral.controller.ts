@@ -11,6 +11,7 @@ import {
   createProgramSchema,
   updateProgramSchema,
   updateTransactionStatusSchema,
+  rejectWithdrawalSchema,
   adjustRewardPointsSchema,
 } from "./referral.validation";
 import * as referralService from "./referral.service";
@@ -69,7 +70,8 @@ export const updateWithdrawalStatus = asyncHandler(async (req: Request, res: Res
 });
 
 export const rejectWithdrawal = asyncHandler(async (req: Request, res: Response) => {
-  await referralService.rejectWithdrawal(req.params.id as string);
+  const { reason } = rejectWithdrawalSchema.parse(req.body ?? {});
+  await referralService.rejectWithdrawal(req.params.id as string, reason);
   return success(res, {}, "Withdrawal rejected and refunded.");
 });
 

@@ -132,7 +132,12 @@ export type RefferalTransactionType =
 export const RefferalTransactionStatus = {
   PENDING: "pending",
   SUCCESSFUL: "successful",
+  // `failed` = the payout was attempted and bounced (the retired RazorpayX
+  // path). `rejected` = finance declined it and it was never sent. Keeping
+  // them distinct is the point — a merged state can't tell the customer
+  // whether their bank details were wrong or their request was refused.
   FAILED: "failed",
+  REJECTED: "rejected",
 } as const;
 export type RefferalTransactionStatus =
   (typeof RefferalTransactionStatus)[keyof typeof RefferalTransactionStatus];
