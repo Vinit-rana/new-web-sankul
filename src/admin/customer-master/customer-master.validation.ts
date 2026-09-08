@@ -14,7 +14,6 @@ export const createDistrictSchema = z.object({
   stateId: z.string().regex(objectIdRegex, "Invalid stateId"),
   active: z.boolean().optional().default(true),
 });
-export const updateDistrictSchema = createDistrictSchema.partial();
 
 export const createEducationSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),

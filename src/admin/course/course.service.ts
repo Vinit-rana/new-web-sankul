@@ -14,7 +14,6 @@ import logger from "../../utils/logger";
 import * as adminCourse from "../../modules/admin-course/admin-course.service";
 
 // Re-exported so the thin controllers can branch validation (numeric vs ObjectId).
-export const isAdminCourseMysql = adminCourse.isAdminCourseMysql;
 export const parseCourseSqlId = adminCourse.parseCourseId;
 
 // On the SQL branch ids are numeric; the Mongo assertObjectId would 400 them.

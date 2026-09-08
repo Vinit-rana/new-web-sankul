@@ -15,8 +15,6 @@ import type {
   BankAccountUpdateInput,
 } from "./customer-bank-account.types";
 
-export const BANK_ACCOUNT_MODULE = "customer-bank-account";
-export const isBankAccountMysql = (): boolean => true;
 
 /** Parse a string id to a positive int, else null. */
 export const parseBankAccountId = (id: string): number | null => {

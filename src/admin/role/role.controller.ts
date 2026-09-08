@@ -7,12 +7,8 @@ import {
   syncPermissionsSchema,
 } from "./role.validation";
 import * as rbac from "../../modules/admin-rbac/admin-rbac.service";
+import { formatZodIssues as formatZodErrors } from "../../utils/httpResponse";
 
-const formatZodErrors = (issues: any[]) =>
-  issues.reduce<Record<string, string>>((acc, i) => {
-    acc[i.path.join(".")] = i.message;
-    return acc;
-  }, {});
 
 // GET /api/v1/admin/roles
 export const listRoles = async (req: Request, res: Response) => {

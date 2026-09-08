@@ -32,7 +32,6 @@ export const centerCreateSchema = z.object({
   cityId: objectIdSchema,
   status: z.boolean().optional(),
 });
-export const centerUpdateSchema = centerCreateSchema.partial();
 
 // ─── Batch ──
 export const batchCreateSchema = z.object({
@@ -44,7 +43,6 @@ export const batchCreateSchema = z.object({
   centerId: objectIdSchema,
   status: z.boolean().optional(),
 });
-export const batchUpdateSchema = batchCreateSchema.partial();
 
 export const reorderSchema = z.object({
   orders: z.array(z.object({ id: z.string().min(1), orderBy: z.number().int() })).min(1),

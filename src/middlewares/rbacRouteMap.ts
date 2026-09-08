@@ -536,9 +536,6 @@ export const resolveRequiredKeys = (
   return null;
 };
 
-/** Total rule count — exposed for a boot-time sanity log / tests. */
-export const RBAC_RULE_COUNT = rules.length;
-
 /**
  * Every catalog permission key referenced by an enforcement rule (deduped).
  *

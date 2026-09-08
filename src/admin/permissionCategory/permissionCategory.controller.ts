@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { formatZodIssues as formatZodErrors } from "../../utils/httpResponse";
 import {
   updatePermissionCategorySchema,
   listQuerySchema,
@@ -11,11 +12,6 @@ import {
   deleteCategory as sqlDeleteCategory,
 } from "../../modules/permission-category/permission-category.service";
 
-const formatZodErrors = (issues: any[]) =>
-  issues.reduce<Record<string, string>>((acc, i) => {
-    acc[i.path.join(".")] = i.message;
-    return acc;
-  }, {});
 
 // GET /api/v1/admin/permission-categories
 export const listPermissionCategories = async (req: Request, res: Response) => {

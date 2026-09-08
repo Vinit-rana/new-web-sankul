@@ -1,16 +1,20 @@
 # CLAUDE.md
 
 Backend API for the **WebSankul** ed-tech platform. Verified against source; documents
-only what exists. The defining fact: **the codebase is mid-migration from MongoDB
-(Mongoose) to MySQL (Prisma)** — both DBs run at once, switched per-module by a flag.
+only what exists. The Mongo→MySQL migration is **COMPLETE**: the app is MySQL-only
+(Prisma). Mongoose is uninstalled, `src/models/**` is deleted, and the per-module
+`isMysqlModule()` flag layer has been removed. Anything describing a dual-DB
+switch is history — do not reintroduce it.
 
 ## Stack
 
-Node + TypeScript (ESM, `"type":"module"`), Express 5. MySQL via Prisma 5 **and**
-MongoDB via Mongoose 8 (simultaneous). Redis (`ioredis`) + BullMQ jobs. Socket.io +
-`ws`. JWT + bcryptjs auth. Zod validation. DigitalOcean Spaces (S3) storage. Razorpay
-payments. `firebase-admin` FCM + nodemailer SMTP. VideoCrypt/StreamOS video. pdfkit/
-puppeteer. PM2 process mgmt. Winston logging. Helmet/CORS/rate-limit security.
+Node + TypeScript (**CommonJS** — `tsconfig` `"module":"commonjs"`, and package.json
+has NO `"type":"module"`; do not write ESM-only syntax or `.js` import suffixes),
+Express 5. MySQL via Prisma 5 (sole datastore). Redis (`ioredis`) + BullMQ jobs.
+Socket.io + `ws`. JWT + bcryptjs auth. Zod validation. DigitalOcean Spaces (S3)
+storage. Razorpay payments. `firebase-admin` FCM + nodemailer SMTP.
+VideoCrypt/StreamOS video. ejs + puppeteer (receipt/solution PDFs). PM2 process
+mgmt. Winston logging. Helmet/CORS/rate-limit security.
 
 ## Commands
 
@@ -29,8 +33,8 @@ No unit-test runner or linter — `yarn typecheck` is the gate.
 
 ## Boot Flow
 
-`src/index.ts`: dotenv → `validateEnvOrExit()` (fail-fast) → if any MySQL modules
-enabled `connectPrisma()` → `connectDB()` (Mongo) → seed permission catalog → start
+`src/index.ts`: dotenv → `validateEnvOrExit()` (fail-fast) → `connectPrisma()`
+→ seed permission catalog → start
 notification + PDF-upload schedulers → HTTP server (keep-alive 65s > LB timeout) →
 attach Socket.io (livechat, camera-ingest, pdf-progress) → graceful shutdown (drains
 via `/readyz`=503). `src/app.ts` assembles middleware in a **deliberately ordered,
@@ -44,11 +48,10 @@ mounted before the rate limiter.
 ```
 src/
   index.ts app.ts          # bootstrap; Express assembly + route mounting
-  config/                  # env, db(mongo), prisma, redis, rateLimiter, migration, storage, courier
+  config/                  # env, prisma, redis, rateLimiter, jwtKeys, corsOrigins, streamos, courier
   middlewares/             # authenticate(+requireRole), validate, errorHandler, health, upload, idempotency, requestContext...
   client/ admin/ educator/ promoter/   # the 4 API surfaces: *.routes.ts + *.controller.ts + *.validation.ts per domain
-  modules/                 # MySQL/Prisma business logic, ~80 modules (see split below)
-  models/                  # Mongoose schemas (legacy Mongo), grouped by domain
+  modules/                 # MySQL/Prisma business logic, ~100 modules (see split below)
   socket/ webhooks/ deeplinking/ libs/ utils/ migrations/
 prisma/schema.prisma       # MySQL: ~121 models, introspected from legacy ws_* DB
 scripts/                   # tsx one-off / backfill / verify scripts
@@ -60,54 +63,49 @@ docs/migration/            # migration plans + status (authoritative)
    in `<surface>.routes.ts`.
 2. **MySQL logic** in `src/modules/<module>/`, fixed file split:
    - `*.repository.ts` — Prisma calls ONLY
-   - `*.service.ts` — logic + the `isMysqlModule()` backend branch
-   - `*.transformer.ts` — Prisma row ↔ stable Mongo-shaped DTO
-   - `*.types.ts` / `*.validation.ts` — DTO/input types; Zod (MySQL variant suffixed `Mysql`)
+   - `*.service.ts` — business logic
+   - `*.transformer.ts` — Prisma row → stable DTO (still Mongo-*shaped*: `_id` as a
+     string, populated sub-objects, camelCase out — the clients depend on it)
+   - `*.types.ts` / `*.validation.ts` — DTO/input types; Zod schemas
 
-   Controllers call services; the service picks MySQL vs Mongo; the transformer keeps
-   the JSON identical either way.
+   Controllers call services; services call repositories; the transformer keeps the
+   JSON shape frozen.
 
-## Database & Migration (core concern)
+## Database (core concern)
 
 - **MySQL/Prisma:** `prisma/schema.prisma`, ~121 models, `ws_*` tables via `@@map`,
   snake_case columns, integer PKs. Client accessors are generated names — check schema
   (e.g. model `FAQ` → `prisma.fAQ` → table `ws_faq`).
-- **Mongo/Mongoose:** `src/models/**` (legacy, still active).
-- **Switch:** `src/config/migration.ts` reads `MIGRATION_MYSQL_MODULES` (CSV in `.env`).
-  `isMysqlModule("faq")` gates the backend; `hasMysqlMigrationModules()` gates Prisma boot.
-  A service branches: `if (isMysqlModule(MODULE)) { /* prisma + transformer */ } else { /* mongoose */ }`.
-- **Contract rule:** API response shape MUST stay identical across both backends — that
-  is what transformers are for (`_id` as string, populated sub-objects, camelCase out).
+- **There is no second datastore.** No Mongo, no Mongoose, no `isMysqlModule()`, no
+  `MIGRATION_MYSQL_MODULES`. `src/config/migration.ts` and `src/models/**` no longer
+  exist. Do not add a backend-selection branch.
+- **Contract rule:** the API response shape MUST stay frozen — that is what transformers
+  are for (`_id` as string, populated sub-objects, camelCase out). The shape is
+  Mongo-legacy because live clients parse it, not because Mongo is still there.
 - **Always log** every query/schema/index/migration change in
   `docs/MIGRATION_QUERY_CHANGES.md` (newest first), and keep `docs/migration/*` plan
   docs current. DDL lives in `docs/migration/schema-changes/*.sql`.
 
-## Canonical Migration Pattern
+## Canonical Module Pattern
 
-Every migrated module follows the same shape (reference: `src/modules/faq/`):
+Every module follows the same shape (reference: `src/modules/faq/`):
 
 ```ts
-const MODULE = "faq";
+const row = await faqRepository.findById(id);
 
-if (isMysqlModule(MODULE)) {
-  const row = await faqRepository.findById(id);
-
-  if (!row) {
-    throw new Error("FAQ not found");
-  }
-
-  return faqTransformer.toDto(row);
+if (!row) {
+  throw new Error("FAQ not found");
 }
 
-return await FAQModel.findById(id);
+return faqTransformer.toDto(row);
 ```
 
 Responsibilities:
 - **Controllers** call services — never a repository or Prisma directly.
-- **Services** choose the backend via `isMysqlModule(MODULE)`.
+- **Services** hold the business logic; no backend branching (there is one backend).
 - **Repositories** contain Prisma queries only — no business logic.
 - **Transformers** normalize Prisma rows into the stable DTO.
-- **API consumers must never be able to tell which database served the request** — the response shape is identical on both paths.
+- **The response shape must never change** — clients in the wild parse it as-is.
 
 ## API & Auth
 
@@ -152,7 +150,7 @@ Responsibilities:
 3. Respect middleware/route ordering in `app.ts` and route files (comments explain why).
 4. New routes require auth unless documented otherwise; use `success()`/`failure()` + Zod `validate`.
 5. In `src/modules/`, follow the repository/service/transformer/types/validation split; keep Prisma calls in the repository.
-6. Gate backend choice through `isMysqlModule()`; keep the Mongo fallback intact unless the plan says otherwise.
+6. Do NOT add backend-selection branches or per-module flags — there is one datastore.
 7. Log query/schema/migration changes in `docs/MIGRATION_QUERY_CHANGES.md` + update `docs/migration/*`.
 8. Don't hand-edit `schema.prisma` carelessly — prefer `yarn db:pull` + `yarn prisma:generate`.
 9. Secrets in `.env` (validated at boot); add new required vars to `config/env.ts` + `.env.example`.
@@ -175,7 +173,7 @@ Existing pattern first. Before creating new code:
 - Do not place business logic inside repositories.
 - Do not bypass transformers when returning MySQL data.
 - Do not return raw Prisma rows in API responses.
-- Do not remove MongoDB fallback paths unless explicitly required by the migration plan.
+- Do not reintroduce MongoDB, Mongoose, or `isMysqlModule()`-style backend flags.
 - Do not change API response envelopes.
 - Do not reorder middleware without understanding the documented reason.
 - Do not create public routes unless explicitly documented.
@@ -190,7 +188,6 @@ When uncertain, default to preservation:
 - Preserve response contracts.
 - Preserve authentication requirements.
 - Preserve middleware ordering.
-- Preserve migration compatibility (both `isMysqlModule` branches).
 - Prefer extending an existing module over inventing a new pattern.
 - **Ask for clarification before modifying** authentication, payment flows, video delivery, migration infrastructure, background jobs (BullMQ), or database schemas.
 
@@ -200,10 +197,10 @@ Before declaring any task complete:
 
 1. Run `yarn typecheck`.
 2. Verify affected API response shapes remain unchanged.
-3. Verify both MongoDB and MySQL code paths compile and remain functional.
+3. Verify the affected module still compiles and behaves (`yarn typecheck` is the only gate).
 4. Verify transformers continue to return the same DTO structure.
 5. Verify authentication and middleware ordering have not been unintentionally changed.
-6. Verify migration flags (`isMysqlModule`) continue to work correctly.
+6. Verify no dead backend-selection scaffolding was reintroduced.
 7. Update migration documentation if queries, schema, indexes, repositories, or transformers were modified.
 8. Update `docs/MIGRATION_QUERY_CHANGES.md` when database behavior changes.
 9. Regenerate the Prisma client (`yarn prisma:generate`) if schema changes require it.
@@ -217,16 +214,18 @@ A task is not complete until:
 - Migration documentation is updated when required.
 - New code follows repository/service/transformer separation.
 - Authentication rules remain intact.
-- MongoDB and MySQL compatibility remain intact.
+- No Mongo/dual-backend scaffolding was reintroduced.
 - Required environment variables are documented (`config/env.ts` + `.env.example`).
 - The implementation matches existing project conventions.
 
 ## Env
 
 `.env` (see `.env.example`), validated at boot by `config/env.ts`. Required always:
-`JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `MONGODB_URI`. Required in prod:
-`ALLOWED_ORIGINS`, `RAZORPAY_WEBHOOK_SECRET`, `REDIS_HOST`, `REDIS_PORT`. `DATABASE_URL`
-required when any `MIGRATION_MYSQL_MODULES` are set. Other groups: SMTP, Spaces (DO_*),
+`JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `DATABASE_URL`. Required in prod:
+`ALLOWED_ORIGINS`, `RAZORPAY_WEBHOOK_SECRET`, `REDIS_HOST`, `REDIS_PORT`.
+Warn-only in prod (`PROD_FEATURE_VARS` — the process still boots, the feature is
+just off): `SMTP_HOST`, `FIREBASE_SERVICE_ACCOUNT`, `DO_ACCESS_KEY_ID`,
+`DO_SECRET_ACCESS_KEY`, `METRICS_TOKEN`. Other groups: Spaces (DO_*),
 Razorpay, 2Factor SMS OTP, Firebase, VideoCrypt/StreamOS, deep-linking, courier
 (Tirupati/Mahavir), PM2 scaling. `docker-compose.yml` = ws-mysql (port 3307) + Redis.
 

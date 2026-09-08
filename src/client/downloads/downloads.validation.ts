@@ -17,5 +17,3 @@ export const putEncryptionKeySchema = z
       .regex(DOWNLOAD_KEY_HEX_REGEX, "key must be exactly 64 hexadecimal characters"),
   })
   .strict();
-
-export type PutEncryptionKeyBody = z.infer<typeof putEncryptionKeySchema>;

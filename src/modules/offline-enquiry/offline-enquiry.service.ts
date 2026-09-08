@@ -19,7 +19,6 @@ export {
   type OfflineBatchQualification,
 } from "./offline-enquiry.types";
 
-export const OFFLINE_ENQUIRY_MODULE = "offline-enquiry";
 
 /**
  * Thrown when a customer re-submits a batch enquiry for the same batch AND
@@ -32,7 +31,6 @@ export class DuplicateEnquiryError extends Error {
   }
 }
 
-export const isOfflineEnquiryMysql = (): boolean => true;
 
 export const parseOfflineEnquiryId = (id: string): number | null => {
   const n = Number(id);

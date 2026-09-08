@@ -16,43 +16,6 @@ import { commercePriceRepository as repo } from "./commerce-price.repository";
 import { toPriceDto } from "./commerce-price.transformer";
 import type { PriceDto } from "./commerce-price.types";
 
-export const PRICE_MODULE = "commerce-price";
-
-/** Whether the price read-path is served from MySQL. */
-export const isPriceMysql = (): boolean => true;
-
-/** Parse a string id to a positive int, else null. */
-export const parsePriceId = (id: string): number | null => {
-  const n = Number(id);
-  return Number.isInteger(n) && n > 0 ? n : null;
-};
-
-/** Parse a list of string ids to positive ints, dropping invalid entries. */
-export const parsePriceIds = (ids: string[]): number[] =>
-  ids
-    .map((id) => Number(id))
-    .filter((n) => Number.isInteger(n) && n > 0);
-
-// ── single ────────────────────────────────────────────────────────────────
-
-/** Single plan by id (any status). Mirrors `findById`. */
-export const findPriceById = async (id: number): Promise<PriceDto | null> => {
-  const row = await repo.findById(id);
-  return row ? toPriceDto(row) : null;
-};
-
-/** Single ACTIVE plan by id. Mirrors `findOne({_id, status:true})`. */
-export const findActivePriceById = async (id: number): Promise<PriceDto | null> => {
-  const row = await repo.findActiveById(id);
-  return row ? toPriceDto(row) : null;
-};
-
-/** Plans by ids. Mirrors `find({_id:{$in}})`. */
-export const findPricesByIds = async (ids: number[]): Promise<PriceDto[]> => {
-  const rows = await repo.findByIds(ids);
-  return rows.map(toPriceDto);
-};
-
 // ── by owner ────────────────────────────────────────────────────────────────
 
 /** Active plans for one package, ordered by duration asc. */
@@ -61,21 +24,9 @@ export const listActivePricesByPackage = async (packageId: number): Promise<Pric
   return rows.map(toPriceDto);
 };
 
-/** Active plans for one course, ordered by duration asc. */
-export const listActivePricesByCourse = async (courseId: number): Promise<PriceDto[]> => {
-  const rows = await repo.listActiveByCourse(courseId);
-  return rows.map(toPriceDto);
-};
-
 /** Active plans for one ebook, ordered by duration asc. */
 export const listActivePricesByEbook = async (ebookId: number): Promise<PriceDto[]> => {
   const rows = await repo.listActiveByEbook(ebookId);
-  return rows.map(toPriceDto);
-};
-
-/** Active plans for many packages. Mirrors `find({packageId:{$in}})`. */
-export const listActivePricesByPackages = async (packageIds: number[]): Promise<PriceDto[]> => {
-  const rows = await repo.listActiveByPackages(packageIds);
   return rows.map(toPriceDto);
 };
 

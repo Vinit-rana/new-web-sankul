@@ -19,15 +19,6 @@ import type { Guard } from "./permission.validation";
 
 export const CATALOG_VERSION = "2026.07.20-2";
 
-export type CatalogAction =
-  | "view" | "list" | "create" | "edit" | "delete" | "toggle-status"
-  | "duplicate" | "bulk-delete" | "bulk-update" | "bulk-status"
-  | "export" | "import" | "assign" | "revoke"
-  | "start" | "end" | "cancel" | "publish" | "unpublish" | "moderate"
-  | "send" | "extend" | "attach" | "detach" | "invalidate"
-  | "update-status" | "assign-role" | "reset-password" | "assign-permissions"
-  | "view-details" | "view-dashboard";
-
 export interface CatalogPermission {
   key: string;
   label: string;
@@ -301,10 +292,6 @@ export const CATALOG_KEYS_BY_GUARD: Map<Guard, Set<string>> = (() => {
   }
   return byGuard;
 })();
-
-/** Modules for a guard (used by the catalog endpoint's `?guard=` filter). */
-export const modulesForGuard = (guard: Guard): CatalogModule[] =>
-  PERMISSION_CATALOG.filter((m) => m.guard === guard);
 
 /** Catalog keys for a guard (used to compute the guard-scoped deprecated set). */
 export const catalogKeysForGuard = (guard: Guard): Set<string> =>

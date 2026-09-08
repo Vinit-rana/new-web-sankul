@@ -8,8 +8,6 @@ import { resyncPackageRelations } from "./package-relation-sync";
 import { parseLabels } from "../../utils/goalSelection";
 import type { Package, PackageType } from "@prisma/client";
 
-export const ADMIN_PACKAGE_MODULE = "admin-package";
-export const isAdminPackageMysql = (): boolean => true;
 
 export const parsePackageId = (id: string): number | null => {
   const n = Number(id);

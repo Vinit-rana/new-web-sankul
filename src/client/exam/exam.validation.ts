@@ -3,22 +3,6 @@ import { z } from "zod";
 
 const objectIdSchema = z.string().regex(/^([0-9a-fA-F]{24}|[1-9]\d*)$/, "Invalid id.");
 
-export const saveAnswersSchema = z.object({
-  examId: objectIdSchema,
-  timing: z.string().regex(/^\d{1,3}:\d{2}(:\d{2})?$/, "Timing must be in MM:SS or HH:MM:SS format."),
-  test: z
-    .array(
-      z.object({
-        questionId: objectIdSchema,
-        // null / omitted = skipped. Matches saveSingleAnswerSchema below; the legacy
-        // "Skip" option id is still accepted for older app builds.
-        answerId: objectIdSchema.nullable().optional(),
-      })
-    )
-    .min(1),
-  ratting: z.string().max(20).optional(),
-});
-
 export const rateResultSchema = z.object({
   ratting: z.string().min(1).max(20),
 });

@@ -24,8 +24,6 @@ export const isReportStatus = (v: unknown): v is ReportStatus =>
   typeof v === "string" && (REPORT_STATUSES as string[]).includes(v);
 
 export type ReportPaymentMethod = "online" | "backend";
-export const isReportPaymentMethod = (v: unknown): v is ReportPaymentMethod =>
-  v === "online" || v === "backend";
 
 /** Prisma `where` fragment for a createdAt range. Empty object when unbounded. */
 export function dateWhere(dateFrom?: string, dateTo?: string): Record<string, any> {

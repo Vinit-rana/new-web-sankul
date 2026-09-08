@@ -46,9 +46,7 @@ export const appliesToGroupSchema = z.object({
 export const appliesToSchema = z.union([
   appliesToGroupSchema.transform((g) => [g]),
   z.array(appliesToGroupSchema).min(1, "Select at least one item"),
-]);
-
-export type AppliesToInput = z.infer<typeof appliesToSchema>; // { type, ids: string[] }[]
+]); // { type, ids: string[] }[]
 
 const percentage = z
   .number()
@@ -72,8 +70,6 @@ export const planLinkSchema = z.object({
   // previous first-match behaviour (and logs a warning when it is ambiguous).
   planKind: z.enum(["price", "livePlan", "testSeriesPrice"]).optional(),
 });
-
-export type PlanLinkInput = z.infer<typeof planLinkSchema>;
 
 export const createPromocodeSchema = promocodeBase
   .extend({

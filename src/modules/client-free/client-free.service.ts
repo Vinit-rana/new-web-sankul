@@ -41,14 +41,6 @@ import { examInCategoriesWhere } from "../catalog-exam/exam-category-pivot.where
 import { searchTokens, buildPrismaSearch, matchesAllTokens } from "../../utils/searchFilter";
 import { byOrderThenCreatedAt } from "../../utils/catalogOrder";
 
-export const CLIENT_FREE_MODULE = "client-free";
-export const isClientFreeMysql = (): boolean => true;
-
-export const parseFreeId = (id: string): number | null => {
-  const n = Number(id);
-  return Number.isInteger(n) && n > 0 ? n : null;
-};
-
 // Recursive descendant ids for a self-referencing category table (material/exam).
 const descendantIds = async (table: string, parentCol: string, rootIds: number[]): Promise<number[]> => {
   const roots = [...new Set(rootIds.filter((n) => Number.isInteger(n) && n > 0))];

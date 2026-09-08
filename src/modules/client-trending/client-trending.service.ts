@@ -16,7 +16,6 @@ import { isNewItem } from "../../utils/isNew";
 import { signMediaToken } from "../../utils/mediaToken";
 import { buildPrismaSearch } from "../../utils/searchFilter";
 
-export const isClientTrendingMysql = (): boolean => true;
 
 type TrendingOpts = { type?: string; search?: string; language?: string; limit?: number; skip?: number; customerId?: number | null };
 const flags = (o: TrendingOpts) => ({

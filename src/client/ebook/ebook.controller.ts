@@ -6,7 +6,6 @@ import { buildShareUrl } from "../../deeplinking/shareRedirect";
 import { parseListQuery, buildPagination } from "../../utils/listQuery";
 import { omit, omitList } from "../../utils/pick";
 import {
-  isEbookMysql,
   listEbooksWithPlans,
   getEbookDetailWithPlans,
   parseEbookId,

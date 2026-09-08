@@ -35,15 +35,11 @@ import type {
   VerifiedCourseSubscriptionDto,
 } from "./commerce-order.types";
 
-export const COMMERCE_ORDER_MODULE = "commerce-order";
 /** Package write-path flag — toggled independently from course (same module/tables). */
-export const PACKAGE_ORDER_MODULE = "package-order";
 
 /** Whether the course write-path is served from MySQL. */
-export const isCommerceOrderMysql = (): boolean => true;
 
 /** Whether the package write-path is served from MySQL. */
-export const isPackageOrderMysql = (): boolean => true;
 
 /** Parse a string id to a positive int, else null. */
 export const parseCommerceOrderId = (id: string): number | null => {

@@ -1,5 +1,5 @@
 import { Response } from "express";
-import { AxiosError } from "axios";
+
 import { ZodError } from "zod";
 
 // Define the response data structure
@@ -123,16 +123,24 @@ export const formatZodError = (
   };
 };
 
-// Helper to get an error message from Axios errors
-export const getAxiosErrorMessage = (error: unknown): string => {
-  if (error instanceof AxiosError) {
-    if (error.response && error.response.data) {
-      const axiosErrorMessage = (error.response.data as { message?: string })
-        .message;
-      return axiosErrorMessage || "An error occurred during the request.";
-    }
-    return error.message;
-  }
-
-  return "Something went wrong! Please try again later.";
-};
+/**
+ * Flatten raw Zod `issues` into a `field -> message` map.
+ *
+ * This is the shape the admin RBAC-ish controllers (role, permission,
+ * permissionCategory, video, videoCategory) return under `errors` in their
+ * hand-rolled 422s. It was copy-pasted identically into all five; this is that
+ * exact function, unchanged.
+ *
+ * NOTE it deliberately differs from `formatZodError` above in two ways, so the
+ * two are NOT interchangeable:
+ *   - a root-level issue keys as "" here, but "_" in formatZodError;
+ *   - on two issues for one field, the LAST wins here, the FIRST there.
+ * Both are reachable, so neither was normalised onto the other.
+ */
+export const formatZodIssues = (
+  issues: { path: (string | number)[]; message: string }[]
+): Record<string, string> =>
+  issues.reduce<Record<string, string>>((acc, i) => {
+    acc[i.path.join(".")] = i.message;
+    return acc;
+  }, {});

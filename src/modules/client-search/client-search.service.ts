@@ -31,8 +31,6 @@ const SEARCH_CARD_RAW_FIELDS = [
   "title", "paperCount", "isFree",
 ] as const;
 
-export const CLIENT_SEARCH_MODULE = "client-search";
-export const isClientSearchMysql = (): boolean => true;
 
 export type SearchType = "courses" | "packages" | "liveCourses" | "books" | "ebooks" | "testSeries";
 export const SEARCH_TYPES: SearchType[] = ["courses", "packages", "liveCourses", "books", "ebooks", "testSeries"];

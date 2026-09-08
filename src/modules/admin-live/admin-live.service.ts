@@ -34,8 +34,6 @@ import logger from "../../utils/logger";
 import { buildPrismaSearch } from "../../utils/searchFilter";
 import type { LiveSession as SqlLiveSession } from "@prisma/client";
 
-export const ADMIN_LIVE_MODULE = "admin-live";
-export const isAdminLiveMysql = (): boolean => true;
 
 /** Parse a numeric SQL id from a string, else null (rejects 24-hex ObjectIds). */
 export const parseAlId = (id: string): number | null => {
@@ -228,14 +226,6 @@ export const setLinkedCourseFolders = async (
       ? [prisma.liveSessionCourse.createMany({ data, skipDuplicates: true })]
       : []),
   ]);
-};
-
-/** Replace the session↔course links by id only (no folder). Thin wrapper. */
-export const setLinkedCourseIds = async (liveSessionId: number, courseIds: number[]): Promise<void> => {
-  await setLinkedCourseFolders(
-    liveSessionId,
-    Array.from(new Set(courseIds)).map((liveCourseId) => ({ liveCourseId, folderId: null }))
-  );
 };
 
 /**

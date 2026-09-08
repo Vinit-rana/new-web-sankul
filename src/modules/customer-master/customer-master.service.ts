@@ -16,8 +16,6 @@ import { prisma } from "../../config/prisma";
 import { parseLabels } from "../../utils/goalSelection";
 import { buildPrismaSearch } from "../../utils/searchFilter";
 
-export const CUSTOMER_MASTER_MODULE = "customer-master";
-export const isCustomerMasterMysql = (): boolean => true;
 
 /** Parse a string id to a positive int, else null. */
 export const parseId = (id: string): number | null => {

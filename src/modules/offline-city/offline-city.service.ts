@@ -9,13 +9,11 @@
  * Centers/batches/enquiry/admin stay on Mongo for a later offline pass.
  */
 import { offlineCityRepository as repo } from "./offline-city.repository";
-import { toCityDto, toCityNameDto } from "./offline-city.transformer";
-import type { CityDto, CityNameDto } from "./offline-city.types";
+import { toCityDto } from "./offline-city.transformer";
+import { CityDto } from "./offline-city.types";
 import { nextOrder } from "../../utils/listOrdering";
 import { prisma } from "../../config/prisma";
 
-export const OFFLINE_CITY_MODULE = "offline-city";
-export const isOfflineCityMysql = (): boolean => true;
 
 /** Parse a string id to a positive int, else null. */
 export const parseCityId = (id: string): number | null => {
@@ -28,17 +26,6 @@ export const parseCityId = (id: string): number | null => {
 export const listActiveCities = async (search?: string, stateId?: number): Promise<CityDto[]> => {
   const rows = await repo.listActive({ search: search?.trim() || undefined, stateId });
   return rows.map(toCityDto);
-};
-
-/**
- * Resolve a city id → { _id, name } for the cart shipping snapshot.
- * Returns null if the id is invalid or the city doesn't exist.
- */
-export const resolveCityName = async (cityId: string | number): Promise<CityNameDto | null> => {
-  const n = typeof cityId === "number" ? cityId : parseCityId(String(cityId));
-  if (!n) return null;
-  const row = await repo.findNameById(n);
-  return row ? toCityNameDto(row) : null;
 };
 
 // ── admin CRUD (Wave 8) ──────────────────────────────────────────────────────

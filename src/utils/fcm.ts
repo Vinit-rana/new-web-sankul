@@ -242,7 +242,3 @@ export async function sendPush(
     skipped: false,
   };
 }
-
-export function isFcmEnabled(): boolean {
-  return initFirebase();
-}

@@ -4,7 +4,6 @@ import logger from "../../utils/logger";
 import { buildShareUrl } from "../../deeplinking/shareRedirect";
 import { omit, omitList } from "../../utils/pick";
 import {
-  isClientEducatorMysql,
   parseEducatorId,
   getEducatorWithCourses,
 } from "../../modules/client-educator/client-educator.service";

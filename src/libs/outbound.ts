@@ -173,14 +173,6 @@ const writeBreaker = async (label: string, stats: BreakerStats): Promise<void> =
   localBreakers.set(label, { ...stats });
 };
 
-/** Read-only snapshot of every breaker known to THIS pod's local fallback
- *  cache. For accurate cluster-wide state, query Redis directly. */
-export const breakerSnapshot = (): Record<string, BreakerStats> => {
-  const out: Record<string, BreakerStats> = {};
-  for (const [k, v] of localBreakers.entries()) out[k] = { ...v };
-  return out;
-};
-
 // ──────────────────────────────────────────────────────────────────────────────
 // Public API
 // ──────────────────────────────────────────────────────────────────────────────

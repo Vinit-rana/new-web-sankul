@@ -6,12 +6,8 @@ import {
   reorderSchema,
 } from "./video.validation";
 import * as videoSql from "../../modules/admin-video/admin-video.service";
+import { formatZodIssues as formatZodErrors } from "../../utils/httpResponse";
 
-const formatZodErrors = (issues: any[]) =>
-  issues.reduce<Record<string, string>>((acc, i) => {
-    acc[i.path.join(".")] = i.message;
-    return acc;
-  }, {});
 
 // GET /
 export const listVideos = async (req: Request, res: Response) => {

@@ -74,9 +74,3 @@ export const saveDownloadKey = async (
   if (res.count === 0) return { ok: false, reason: "customer_missing" };
   return { ok: true, dto: toDownloadEncryptionKeyDto(keyHex), changed: true };
 };
-
-/** Account deletion cleanup — clears this customer's key only. */
-export const clearDownloadKey = async (customerId: number): Promise<number> => {
-  const res = await downloadKeyRepository.clearKey(customerId);
-  return res.count;
-};

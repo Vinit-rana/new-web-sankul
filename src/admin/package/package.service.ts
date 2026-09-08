@@ -18,7 +18,6 @@ import * as adminPackage from "../../modules/admin-package/admin-package.service
 import * as promoCode from "../../modules/promo-code/promo-code.service";
 
 // Re-exported so the thin controllers can branch validation if needed.
-export const isAdminPackageMysql = adminPackage.isAdminPackageMysql;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers

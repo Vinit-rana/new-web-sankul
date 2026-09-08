@@ -22,30 +22,13 @@ import { commerceSubscriptionRepository as repo } from "./commerce-subscription.
 import { toSubscriptionDto } from "./commerce-subscription.transformer";
 import type { SubscriptionDto } from "./commerce-subscription.types";
 
-export const SUBSCRIPTION_MODULE = "commerce-subscription";
 
 /** Whether the subscription read-path is served from MySQL. */
-export const isSubscriptionMysql = (): boolean => true;
 
 /** Parse a string id to a positive int, else null. */
 export const parseSubscriptionId = (id: string): number | null => {
   const n = Number(id);
   return Number.isInteger(n) && n > 0 ? n : null;
-};
-
-// ── entitlement checks (the access gates) ───────────────────────────────────
-
-/**
- * Does this customer hold an ACTIVE, unexpired COURSE entitlement?
- * Mirrors `findOne({customerId, courseId, status:true, endAt:{$gt:now}})`.
- */
-export const hasActiveCourseSubscription = async (
-  customerId: number,
-  courseId: number,
-  now: Date = new Date()
-): Promise<boolean> => {
-  const row = await repo.findActiveCourseSub(customerId, courseId, now);
-  return row !== null;
 };
 
 /** Does this customer hold an ACTIVE, unexpired PACKAGE entitlement? */
@@ -56,16 +39,6 @@ export const hasActivePackageSubscription = async (
 ): Promise<boolean> => {
   const row = await repo.findActivePackageSub(customerId, packageId, now);
   return row !== null;
-};
-
-/** The active course entitlement row (e.g. for days-left), or null. */
-export const getActiveCourseSubscription = async (
-  customerId: number,
-  courseId: number,
-  now: Date = new Date()
-): Promise<SubscriptionDto | null> => {
-  const row = await repo.findActiveCourseSub(customerId, courseId, now);
-  return row ? toSubscriptionDto(row) : null;
 };
 
 /** The active package entitlement row, or null. */
@@ -111,14 +84,6 @@ export const getActivePackageSubMap = async (
 export const findSubscriptionById = async (id: number): Promise<SubscriptionDto | null> => {
   const row = await repo.findById(id);
   return row ? toSubscriptionDto(row) : null;
-};
-
-/** All subscriptions for a customer, newest first. */
-export const listSubscriptionsByCustomer = async (
-  customerId: number
-): Promise<SubscriptionDto[]> => {
-  const rows = await repo.listByCustomer(customerId);
-  return rows.map(toSubscriptionDto);
 };
 
 /** Active (status + unexpired) subscriptions for a customer, newest first. */

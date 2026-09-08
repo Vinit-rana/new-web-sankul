@@ -155,13 +155,6 @@ export const countFaqsByCategory = async (
   return faqRepository.countByType(type);
 };
 
-export const isFaqTypeInUse = async (typeIdOrCategory: string): Promise<boolean> => {
-  if ((FAQ_TYPES as readonly string[]).includes(typeIdOrCategory)) {
-    return (await countFaqsByCategory(typeIdOrCategory as FaqCategory)) > 0;
-  }
-  return false;
-};
-
 // ─── FAQ types (synthetic list on MySQL) ─────────────────────────────────────
 
 export const listFaqTypes = async (): Promise<FaqTypeDto[]> => {

@@ -6,10 +6,6 @@
 import { HttpError } from "../../middlewares/errorHandler";
 import * as sql from "../../modules/admin-live-course/admin-live-course.service";
 
-// Re-exported so the thin controllers can branch validation.
-export const isLiveCourseMysql = sql.isLiveCourseMysql;
-export const parseLiveSqlId = sql.parseLiveId;
-
 // Ids are numeric on the SQL path.
 const assertLiveSqlId = (id: string, label: string): number => {
   const n = sql.parseLiveId(id);

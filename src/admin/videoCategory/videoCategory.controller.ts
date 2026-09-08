@@ -8,12 +8,8 @@ import {
   categoryVideosQuerySchema,
 } from "./videoCategory.validation";
 import * as vcat from "../../modules/admin-master/admin-master.service";
+import { formatZodIssues as formatZodErrors } from "../../utils/httpResponse";
 
-const formatZodErrors = (issues: any[]) =>
-  issues.reduce<Record<string, string>>((acc, i) => {
-    acc[i.path.join(".")] = i.message;
-    return acc;
-  }, {});
 
 const buildMeta = (page: number, per_page: number, total: number) => ({
   page,

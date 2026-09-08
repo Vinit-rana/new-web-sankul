@@ -6,8 +6,6 @@ import { matchesAllTokens } from "../../utils/searchFilter";
 import { primaryParentMap } from "../../utils/videoCategoryRelation";
 import { resyncAllPackageRelations } from "../admin-package/package-relation-sync";
 
-export const ADMIN_MASTER_MODULE = "admin-master";
-export const isAdminMasterMysql = (): boolean => true;
 
 export const parseMasterId = (id: string): number | null => {
   const n = Number(id);

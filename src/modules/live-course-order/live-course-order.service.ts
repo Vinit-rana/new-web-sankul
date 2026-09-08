@@ -41,8 +41,6 @@ import { computeMaterialSplit } from "../commerce-order/commerce-order.service";
  * `wallet_coin` became `ws_coin`, and `paid_at` is gone — `updated_at` is the paid-at
  * on every order table, which is where the package receipt has always read it.
  */
-export const LIVE_COURSE_ORDER_MODULE = "live-course-order";
-export const isLiveCourseOrderMysql = (): boolean => true;
 
 export type LiveCourseVerifyDto = {
   _id: string;

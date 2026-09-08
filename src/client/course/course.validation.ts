@@ -5,10 +5,6 @@ export const objectIdRegex = /^([0-9a-fA-F]{24}|[1-9]\d*)$/;
 // branch resolves ids as ints (e.g. ws_video / ws_course / ws_package).
 export const idOrObjectIdRegex = /^([0-9a-fA-F]{24}|\d+)$/;
 
-export const objectIdParamSchema = z.object({
-  id: z.string().regex(objectIdRegex, "Please select valid package"),
-});
-
 const phoneSchema = z
   .union([z.string(), z.number()])
   .refine((v) => {

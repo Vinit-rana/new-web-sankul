@@ -12,8 +12,6 @@ import { prisma } from "../../config/prisma";
 import { buildPrismaSearch } from "../../utils/searchFilter";
 import { nextOrder } from "../../utils/listOrdering";
 
-export const CMS_EXTRA_MODULE = "cms-extra";
-export const isCmsExtraMysql = (): boolean => true;
 
 export const parseCmsId = (id: string): number | null => {
   const n = Number(id);

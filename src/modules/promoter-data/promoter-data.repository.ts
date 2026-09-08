@@ -25,18 +25,6 @@ const num = (v: unknown): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
-export interface PromoterSubRow {
-  id: number;
-  customerId: number;
-  amount: number;
-  promocode: string | null;
-  promoterPercentage: number;
-  courseId: number | null;
-  packageId: number | null;
-  status: boolean;
-  createdAt: Date | null;
-}
-
 export const promoterDataRepository = {
   // ─── Course/package subscriptions attributed to a promoter ───────────────
   /** Paginated course subs for a promoter, with the embedded promo % + names. */

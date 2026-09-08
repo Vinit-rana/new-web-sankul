@@ -22,8 +22,6 @@ import type {
   OfflineCenterWithCityDto,
 } from "./offline-batch.types";
 
-export const OFFLINE_BATCH_MODULE = "offline-batch";
-export const isOfflineBatchMysql = (): boolean => true;
 
 /** Parse a string id to a positive int, else null. */
 export const parseOfflineId = (id: string): number | null => {

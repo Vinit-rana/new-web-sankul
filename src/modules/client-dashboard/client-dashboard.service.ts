@@ -6,7 +6,6 @@
  */
 import { parseGoalSelection } from "../../utils/goalSelection";
 
-export const isClientDashboardMysql = (): boolean => true;
 
 export const parseCdId = (id: string): number | null => {
   const n = Number(id);

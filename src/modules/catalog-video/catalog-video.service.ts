@@ -31,8 +31,6 @@ import type {
   VideoEncryptInput,
 } from "./catalog-video.types";
 
-export const VIDEO_MODULE = "catalog-video";
-export const isVideoMysql = (): boolean => true;
 
 /** Parse a string id to a positive int, else null. */
 export const parseVideoId = (id: string): number | null => {
@@ -74,20 +72,6 @@ export const getVideoEncryptInput = async (
   const row = await repo.findVideoById(id);
   if (!row) return null;
   return { video: toVideoDto(row), encrypt: toVideoEncryptInput(row) };
-};
-
-// ── video categories ──────────────────────────────────────────────────────
-
-export const findVideoCategoryById = async (
-  id: number
-): Promise<VideoCategoryDto | null> => {
-  const row = await repo.findCategoryById(id);
-  return row ? toVideoCategoryDto(row) : null;
-};
-
-export const listActiveVideoCategories = async (): Promise<VideoCategoryDto[]> => {
-  const rows = await repo.listActiveCategories();
-  return rows.map(toVideoCategoryDto);
 };
 
 /**

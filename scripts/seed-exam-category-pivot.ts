@@ -84,23 +84,6 @@ export const parsePivotSql = (content: string): PivotSeedRow[] => {
   return rows;
 };
 
-/** Category id + ancestors up to root (inclusive). */
-export const categoryAncestorIds = (
-  categoryId: number,
-  catById: Map<number, { parent: number }>
-): number[] => {
-  const ids: number[] = [];
-  const guard = new Set<number>();
-  let cur: number | null = categoryId;
-  while (cur != null && catById.has(cur) && !guard.has(cur)) {
-    guard.add(cur);
-    ids.push(cur);
-    const parent = catById.get(cur)!.parent;
-    cur = parent && parent !== 0 ? parent : null;
-  }
-  return ids;
-};
-
 /**
  * Demo pivot rows for local DBs: link each exam to its category tree (+ optional extra root).
  * Staging exam 300001 references category 1637 which is absent from the dump — falls back to cat 6.

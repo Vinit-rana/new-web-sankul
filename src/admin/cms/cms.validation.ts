@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { TERMS_MODULES } from "../../modules/terms/terms.types";
+
 import { UpdateType } from "../../shared/enums";
 
 // Accepts a MySQL integer id or a legacy Mongo ObjectId (migration-tolerant).
@@ -11,7 +11,6 @@ export const faqCreateSchema = z.object({
   question: z.string().min(1).max(1000),
   answer: z.string().min(1),
 });
-export const faqUpdateSchema = faqCreateSchema.partial();
 
 // ─── FAQ Type ──
 export const faqTypeCreateSchema = z.object({

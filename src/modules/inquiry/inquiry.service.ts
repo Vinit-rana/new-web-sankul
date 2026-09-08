@@ -10,8 +10,6 @@
 import { prisma } from "../../config/prisma";
 import { buildPrismaSearch } from "../../utils/searchFilter";
 
-export const INQUIRY_MODULE = "inquiry";
-export const isInquiryMysql = (): boolean => true;
 
 export const parseInquiryId = (id: string): number | null => {
   const n = Number(id);

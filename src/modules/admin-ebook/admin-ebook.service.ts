@@ -12,9 +12,8 @@ import { populateExamCountdowns, parseIdArray } from "../exam-countdown/exam-cou
 import { PaymentMethod } from "@prisma/client";
 import type { EBook, PackageCourseEbookPrice } from "@prisma/client";
 import { buildPagination } from "../../utils/listQuery";
+import { fmtExportDate } from "../../utils/csvExport";
 
-export const ADMIN_EBOOK_MODULE = "admin-ebook";
-export const isAdminEbookMysql = (): boolean => true;
 
 export const parseEbookId = (id: string): number | null => {
   const n = Number(id);
@@ -431,15 +430,6 @@ async function* iterateSubExportRows(opts: any) {
 
 // IST (Asia/Kolkata, +5:30, no DST) `YYYY-MM-DD HH:mm:ss`, e.g. "2026-10-06 00:01:21"
 // — unified with the Subscription / Test Series exports (was raw UTC ISO).
-const IST_OFFSET_MS = 330 * 60_000;
-const pad2 = (n: number): string => String(n).padStart(2, "0");
-const fmtExportDate = (d: Date | string | null | undefined): string => {
-  if (!d) return "";
-  const t = new Date(d);
-  if (Number.isNaN(t.getTime())) return "";
-  const s = new Date(t.getTime() + IST_OFFSET_MS);
-  return `${s.getUTCFullYear()}-${pad2(s.getUTCMonth() + 1)}-${pad2(s.getUTCDate())} ${pad2(s.getUTCHours())}:${pad2(s.getUTCMinutes())}:${pad2(s.getUTCSeconds())}`;
-};
 // Display status shown by the report table: mirrors the statusFilter semantics
 // (inactive = not active; expired = active but endAt past; active = active & current).
 const displaySubStatus = (i: ReturnType<typeof toSubListItem>, now: Date): string => {

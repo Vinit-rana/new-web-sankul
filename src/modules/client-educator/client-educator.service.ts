@@ -7,8 +7,6 @@ import { computeDaysLeft } from "../../utils/planDuration";
  * ws_course, ws_package_course_ebook_price (plans), ws_package_course_subscription
  * (entitlement). Read-only. View-counter bump is fire-and-forget.
  */
-export const CLIENT_EDUCATOR_MODULE = "client-educator";
-export const isClientEducatorMysql = (): boolean => true;
 
 export const parseEducatorId = (id: string): number | null => {
   const n = Number(id);

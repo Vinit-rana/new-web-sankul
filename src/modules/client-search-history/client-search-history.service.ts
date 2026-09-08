@@ -6,14 +6,12 @@
  *    newest SEARCH_HISTORY_LIMIT rows survive per customer. Older ones vanish.
  *  - list(): newest-first, capped at SEARCH_HISTORY_LIMIT.
  *
- * MySQL-only (net-new data, no Mongo legacy). The `isMysqlModule` gate is kept
- * for call-site consistency with neighbouring modules.
+ * MySQL-only (net-new data, no Mongo legacy).
  */
 import * as repo from "./client-search-history.repository";
 import * as transformer from "./client-search-history.transformer";
 import { SEARCH_HISTORY_LIMIT, type SearchHistoryDto } from "./client-search-history.types";
 
-export const isSearchHistoryMysql = (): boolean => true;
 
 // Normalize so "  UPSC ", "upsc", and "UPSC" all collapse to one history
 // entry: trim, collapse internal whitespace, and lowercase (case-insensitive

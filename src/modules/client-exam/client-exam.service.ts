@@ -1,8 +1,7 @@
 import { clientExamRepository as repo } from "./client-exam.repository";
 import { descendantExamCategoryIds } from "../catalog-exam/exam-category-pivot.where";
+import { MONTH_LABELS, weekOfMonth, weekRange } from "../../utils/dateBuckets";
 
-export const CLIENT_EXAM_MODULE = "client-exam";
-export const isClientExamMysql = (): boolean => true;
 
 export const parseExamId = (id: string): number | null => {
   const n = Number(id);
@@ -256,26 +255,9 @@ export const listPastDailyResults = async (customerId: number, page: number, lim
   return { items, total };
 };
 
-// ─── solutions (the exam's solution PDF + per-exam result) ───────────────────
-export const getExamForSolution = async (examId: number) => {
-  const exam = await repo.findPublishedExam(examId);
-  return exam ? toExamDto({ ...exam, solution: exam.solution }) : null;
-};
-
-export const getResultForExam = async (examId: number, customerId: number) => {
-  const rows = await repo.resultsForCustomerExams(customerId, [examId]);
-  return rows.length ? toResultDto(rows[0]) : null;
-};
-
 // ─── daily-exam drill-down ───────────────────────────────────────────────────
-const MONTH_LABELS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-const weekOfMonth = (day: number) => (day <= 28 ? Math.ceil(day / 7) : 5);
-const weekRange = (year: number, month: number, week: number) => {
-  const startDay = (week - 1) * 7 + 1;
-  const start = new Date(year, month - 1, startDay, 0, 0, 0, 0);
-  const end = week === 5 ? new Date(year, month, 0, 23, 59, 59, 999) : new Date(year, month - 1, startDay + 6, 23, 59, 59, 999);
-  return { start, end };
-};
+// Bucketing helpers are shared with the free-tests drill-down so the two
+// endpoints cannot drift (see utils/dateBuckets).
 
 export const getDailyExams = async (opts: { year?: number; month?: number; week?: number; customerId: number | null; skip?: number; take?: number; search?: string | null }) => {
   const now = new Date();

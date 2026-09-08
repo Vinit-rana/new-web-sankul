@@ -1,7 +1,5 @@
 import { clientMySubscriptionsRepository as repo } from "./client-my-subscriptions.repository";
 
-export const MY_SUBSCRIPTIONS_MODULE = "client-my-subscriptions";
-export const isMySubscriptionsMysql = (): boolean => true;
 
 export const parseMySubId = (id: string): number | null => {
   const n = Number(id);

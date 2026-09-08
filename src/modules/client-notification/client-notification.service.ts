@@ -16,8 +16,6 @@ import { extractNotificationRouting } from "../../utils/notificationTarget";
  * (dispatcher/scheduler/audience) is migrated to SQL Customer ids. Reads + the
  * read-state writes (markRead/markAll) here are correct + verifiable in isolation.
  */
-export const NOTIFICATION_MODULE = "client-notification";
-export const isNotificationMysql = (): boolean => true;
 
 export const parseNotifId = (id: string): number | null => {
   const n = Number(id);

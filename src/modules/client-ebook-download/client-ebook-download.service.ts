@@ -12,8 +12,6 @@ import { signMediaToken } from "../../utils/mediaToken";
  * endAt>now). The ebook's OWN status is NOT required — an owner keeps access to a
  * DEACTIVATED ebook they bought (deactivation only hides it from browse/new purchase).
  */
-export const EBOOK_DOWNLOAD_MODULE = "client-ebook-download";
-export const isEbookDownloadMysql = (): boolean => true;
 
 export const parseDlId = (id: string): number | null => {
   const n = Number(id);

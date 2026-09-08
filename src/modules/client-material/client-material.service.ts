@@ -19,8 +19,6 @@ import { prisma } from "../../config/prisma";
 import { signMediaToken } from "../../utils/mediaToken";
 import { buildPrismaSearch } from "../../utils/searchFilter";
 
-export const CLIENT_MATERIAL_MODULE = "client-material";
-export const isClientMaterialMysql = (): boolean => true;
 
 /**
  * Mint a material media token, or `null` when the material is NOT accessible

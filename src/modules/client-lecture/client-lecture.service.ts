@@ -8,18 +8,10 @@
  */
 import { prisma } from "../../config/prisma";
 
-export const CLIENT_LECTURE_MODULE = "client-lecture";
-export const isClientLectureMysql = (): boolean => true;
 
 export const parseLecId = (id: string): number | null => {
   const n = Number(id);
   return Number.isInteger(n) && n > 0 ? n : null;
-};
-
-export type LectureVideo = {
-  id: number; title: string; platform: string;
-  youtube_id: string | null; aws_id: string | null; vimeo_id: string | null;
-  priceType: string; videoCategoryId: number | null;
 };
 
 /** Fetch a live video by id (any price). null → 404, status:false → 403 handled by caller. */

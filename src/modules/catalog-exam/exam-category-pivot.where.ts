@@ -35,14 +35,6 @@ export const subjectStartedWhere = (now: Date): Prisma.ExamWhereInput => ({
   OR: [{ startAt: null }, { startAt: { lte: now } }],
 });
 
-/** AND-merge category match into an existing exam filter. */
-export const withExamInCategories = (
-  base: Prisma.ExamWhereInput,
-  categoryIds: number[]
-): Prisma.ExamWhereInput => ({
-  AND: [base, examInCategoriesWhere(categoryIds)],
-});
-
 /**
  * All category ids at or below `rootId` (self + descendants), via the self-FK tree.
  *
@@ -58,12 +50,6 @@ export const descendantExamCategoryIds = async (rootId: number): Promise<number[
   );
   return rows.map((r) => Number(r.id));
 };
-
-/** Exams filed under `categoryId` OR any category beneath it. */
-export const examInCategorySubtreeWhere = async (
-  categoryId: number
-): Promise<Prisma.ExamWhereInput> =>
-  examInCategoriesWhere(await descendantExamCategoryIds(categoryId));
 
 /**
  * Validate a set of category ids for a write: each must exist (and not be

@@ -44,7 +44,6 @@ export const APP_PATHS = [
   "notes",
   "notifications",
 ] as const;
-export type AppPath = (typeof APP_PATHS)[number];
 
 // Registered Android channels (spec §3.1). Default applied by the app when omitted.
 export const NOTIFICATION_CHANNELS = [
@@ -52,7 +51,6 @@ export const NOTIFICATION_CHANNELS = [
   "websankul-social",
   "websankul-offer",
 ] as const;
-export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number];
 
 // Numeric SQL id, accepted as number or numeric string, normalised to text.
 const entityId = z.union([z.number().int().positive(), z.string().regex(/^\d+$/)]);

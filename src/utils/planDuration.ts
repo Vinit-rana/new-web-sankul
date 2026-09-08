@@ -108,17 +108,3 @@ export const computeDaysLeft = (
   const ms = endAt.getTime() - now.getTime();
   return Math.max(0, Math.ceil(ms / 86_400_000));
 };
-
-/**
- * Sum the saved-materials + saved-videos + active-ebook-downloads counts
- * for a profile dashboard's `downloads` field. Pinned by audit memory:
- * composition must remain exactly these three terms.
- */
-export const composeDownloadsCount = (parts: {
-  savedMaterials: number;
-  savedVideos: number;
-  activeEbookDownloads: number;
-}): number =>
-  (parts.savedMaterials || 0) +
-  (parts.savedVideos || 0) +
-  (parts.activeEbookDownloads || 0);

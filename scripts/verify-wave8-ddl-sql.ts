@@ -21,9 +21,9 @@ function check(label: string, cond: boolean, detail = "") {
 }
 
 async function main() {
-  for (const [n, on] of [["tracking", track.isTrackingMysql()], ["goal", goal.isGoalMysql()], ["cms-extra", cmsx.isCmsExtraMysql()], ["inquiry", inq.isInquiryMysql()], ["offline-batch", ob.isOfflineBatchMysql()]] as const) {
-    if (!on) throw new Error(`flag ${n} is OFF`);
-  }
+  // (The per-module `is*Mysql()` flag guard that used to sit here was dropped
+  // with the flags themselves: Mongo is gone, so every module is on SQL
+  // unconditionally and the check could never fail.)
 
   // ── 1. tracking (ActivityLog) ──────────────────────────────────────────────
   console.log("1. tracking / ActivityLog");

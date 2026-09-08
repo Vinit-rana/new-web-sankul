@@ -10,7 +10,6 @@
  */
 import { prisma } from "../../config/prisma";
 
-export const isEducatorPortalMysql = (): boolean => true;
 
 export const parseEpId = (id: string): number | null => {
   const n = Number(id);

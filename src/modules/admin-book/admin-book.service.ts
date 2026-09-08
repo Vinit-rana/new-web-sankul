@@ -9,9 +9,8 @@ import { splitFullName } from "../customer-profile/customer-profile.name";
 import { adminBookRepository as repo } from "./admin-book.repository";
 import { parseIdArray, populateExamCountdowns } from "../exam-countdown/exam-countdown.service";
 import type { Book } from "@prisma/client";
+import { fmtExportDate } from "../../utils/csvExport";
 
-export const ADMIN_BOOK_MODULE = "admin-book";
-export const isAdminBookMysql = (): boolean => true;
 
 export const parseBookId = (id: string): number | null => {
   const n = Number(id);
@@ -509,15 +508,6 @@ const ORDERS_EXPORT_BATCH = 5000;
 
 // IST (Asia/Kolkata, +5:30, no DST) `YYYY-MM-DD HH:mm:ss`, e.g. "2026-10-06 00:01:21"
 // — unified with the Subscription / Test Series exports (was raw UTC ISO).
-const IST_OFFSET_MS = 330 * 60_000;
-const pad2 = (n: number): string => String(n).padStart(2, "0");
-const fmtExportDate = (d: Date | string | null | undefined): string => {
-  if (!d) return "";
-  const t = new Date(d);
-  if (Number.isNaN(t.getTime())) return "";
-  const s = new Date(t.getTime() + IST_OFFSET_MS);
-  return `${s.getUTCFullYear()}-${pad2(s.getUTCMonth() + 1)}-${pad2(s.getUTCDate())} ${pad2(s.getUTCHours())}:${pad2(s.getUTCMinutes())}:${pad2(s.getUTCSeconds())}`;
-};
 
 type OrderExportRow = {
   orderDate: string;

@@ -7,8 +7,6 @@
  */
 import { prisma } from "../../config/prisma";
 
-export const TRACKING_MODULE = "tracking";
-export const isTrackingMysql = (): boolean => true;
 
 export const parseTrackingId = (id: string): number | null => {
   const n = Number(id);

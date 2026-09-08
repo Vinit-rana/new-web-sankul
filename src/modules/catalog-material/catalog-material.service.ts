@@ -16,8 +16,6 @@ import type {
   MaterialCategoryDto,
 } from "./catalog-material.types";
 
-export const MATERIAL_MODULE = "catalog-material";
-export const isMaterialMysql = (): boolean => true;
 
 /** Parse a string id to a positive int, else null. */
 export const parseMaterialCategoryId = (id: string): number | null => {

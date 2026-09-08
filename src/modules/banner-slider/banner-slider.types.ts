@@ -86,7 +86,3 @@ export interface BannerUpdateInput {
   keyId?: string | number;
   orderBy?: number;
 }
-
-export interface BannerReorderInput {
-  orders: { id: string; orderBy: number }[];
-}

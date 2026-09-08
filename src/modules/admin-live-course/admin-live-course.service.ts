@@ -31,9 +31,8 @@ import { buildPagination } from "../../utils/listQuery";
 import { nextOrder } from "../../utils/listOrdering";
 import { buildPrismaSearch, matchesAllTokens } from "../../utils/searchFilter";
 import { buildPreviewTrackingId } from "../../utils/previewTracking";
+import { fmtExportDate } from "../../utils/csvExport";
 
-export const LIVE_COURSE_MODULE = "live-course";
-export const isLiveCourseMysql = (): boolean => true;
 
 export const parseLiveId = (id: string): number | null => {
   const n = Number(id);
@@ -228,8 +227,6 @@ export const togglePopular = async (id: number): Promise<"not_found" | { id: str
   const updated = await repo.update(id, { isPopular: !row.isPopular, updatedAt: new Date() });
   return { id: String(id), isPopular: updated.isPopular };
 };
-
-export const sessionCount = async (id: number) => (await repo.sessionsForCourse(id, { now: new Date(), skip: 0, take: 1 })).total;
 
 // ── sessions for a course ────────────────────────────────────────────────────
 export const listSessionsForCourse = async (id: number, q: { status?: string; upcoming?: string; search?: string; page?: string; limit?: string }): Promise<"not_found" | { sessions: any[]; total: number; page: number; limit: number }> => {
@@ -761,15 +758,6 @@ async function* iterateSubExportRows(filter: { listWhere: any }, now: Date) {
 
 // IST (Asia/Kolkata, +5:30, no DST) `YYYY-MM-DD HH:mm:ss`, e.g. "2026-10-06 00:01:21"
 // — unified with the Subscription / Test Series exports (was raw UTC ISO).
-const IST_OFFSET_MS = 330 * 60_000;
-const pad2 = (n: number): string => String(n).padStart(2, "0");
-const fmtExportDate = (d: Date | string | null | undefined): string => {
-  if (!d) return "";
-  const t = new Date(d);
-  if (Number.isNaN(t.getTime())) return "";
-  const s = new Date(t.getTime() + IST_OFFSET_MS);
-  return `${s.getUTCFullYear()}-${pad2(s.getUTCMonth() + 1)}-${pad2(s.getUTCDate())} ${pad2(s.getUTCHours())}:${pad2(s.getUTCMinutes())}:${pad2(s.getUTCSeconds())}`;
-};
 
 // Column order mirrors the detailed subscription report table — the client reconciles
 // the two files column for column, so the 27 headers and their order are fixed.
@@ -2615,16 +2603,6 @@ export const listSessionsForCourseClient = async (id: number, q: { status?: stri
   return listSessionsForCourse(id, q); // same shape as the admin sessions-for-course
 };
 
-// ── schedule (folders+entries JSON) for a course, with daysLeft ───────────────
-export const getScheduleForCourse = async (customerId: number | null, id: number): Promise<"not_found" | { scheduleFolders: any[]; daysLeft: number | null }> => {
-  const row = await repo.findById(id);
-  if (!row || !row.status) return "not_found";
-  const folders = jArr(row.scheduleFolders).slice().sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0))
-    .map((f: any) => ({ _id: f._id, title: f.title, image: f.image ?? null, order: f.order ?? 0, status: f.status !== false, entries: [...(f.entries ?? [])].sort((x: any, y: any) => (x.order ?? 0) - (y.order ?? 0)) }));
-  const dl = await getDaysLeftMap(customerId, [id]);
-  return { scheduleFolders: folders, daysLeft: dl.has(String(id)) ? dl.get(String(id)) ?? null : null };
-};
-
 export const getScheduleFolderForClient = async (id: number, folderId: string): Promise<"not_found" | "folder_not_found" | { scheduleFolder: any }> => {
   const row = await repo.findById(id);
   if (!row || !row.status) return "not_found";
@@ -2773,8 +2751,6 @@ export const listMyScheduleForClient = async (customerId: number) => {
 import { prisma } from "../../config/prisma";
 import { descendantsOf } from "../catalog-category-tree/category-tree.service";
 
-export const ADMIN_LIVE_COURSE_MODULE = "admin-live-course";
-export const isAdminLiveCourseMysql = (): boolean => true;
 
 function lcSlugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");

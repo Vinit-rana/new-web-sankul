@@ -29,7 +29,6 @@
  */
 import { customerShippingRepository as repo } from "./customer-shipping.repository";
 
-export const CUSTOMER_SHIPPING_MODULE = "customer-shipping";
 
 export type ResolveShippingFailure = "address_not_found" | "phone_missing" | "city_missing" | "snapshot_missing";
 

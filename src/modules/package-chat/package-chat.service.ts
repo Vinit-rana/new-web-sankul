@@ -13,9 +13,7 @@ import type {
   PostChatInput,
 } from "./package-chat.types";
 
-export const PACKAGE_CHAT_MODULE = "package-chat";
 
-export const isPackageChatMysql = (): boolean => true;
 
 export const parsePackageChatId = (id: string): number | null => {
   const n = Number(id);

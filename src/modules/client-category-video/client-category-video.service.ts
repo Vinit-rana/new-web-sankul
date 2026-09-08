@@ -15,8 +15,6 @@
 import { prisma } from "../../config/prisma";
 import { buildPrismaSearch } from "../../utils/searchFilter";
 
-export const CATEGORY_VIDEO_MODULE = "client-category-video";
-export const isCategoryVideoMysql = (): boolean => true;
 
 export const parseCvId = (id: string): number | null => {
   const n = Number(id);
@@ -28,12 +26,6 @@ export const findCategory = (id: number) =>
 
 /** Category DTO shaped like the Mongo `category` object (passthrough-ish). */
 export const categoryDto = (c: any) => ({ _id: String(c.id), title: c.title ?? null, image: c.image ?? null });
-
-export type CvVideo = {
-  id: number; title: string; topic: string; platform: string;
-  youtube_id: string | null; aws_id: string | null; vimeo_id: string | null;
-  priceType: string; videoCategoryId: number | null;
-};
 
 const videoSelect = {
   id: true, title: true, topic: true, platform: true,
@@ -88,12 +80,6 @@ export const videosWithNotes = async (customerId: number, videoIds: number[]): P
   const out = new Set<number>();
   for (const r of [...text, ...audio]) if (r.videoId != null) out.add(r.videoId);
   return out;
-};
-
-/** Owning-container scope ({kind, id}) for a category — SQL DAG resolver (FIRST owner). */
-export const scopeForCategory = async (categoryId: number) => {
-  const { resolveVideoScope } = await import("../catalog-category-tree/category-tree.service");
-  return resolveVideoScope(categoryId);
 };
 
 /** ALL owning containers for a category (a category may sit under multiple packages). */

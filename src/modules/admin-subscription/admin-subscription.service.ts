@@ -9,6 +9,7 @@ import { adminSubscriptionRepository as repo } from "./admin-subscription.reposi
 import { computeMaterialSplit } from "../commerce-order/commerce-order.service";
 import { andWhere, statusWhere, normalizeStatus, reportRow, blankStrToNull, decToNum, rowHasMaterial, trackingToNumber } from "../../utils/reportFilters";
 import { PaymentMethod } from "../../shared/enums";
+import { fmtExportDate } from "../../utils/csvExport";
 
 // Report `orderMethod` filter = the payment GATEWAY (order.payment_method), distinct
 // from `paymentMethod` (= payment_type online|backend, the activation channel). FE
@@ -18,8 +19,6 @@ const GATEWAY_BY_INPUT: Record<string, string> = {
   free: PaymentMethod.FREE, paykun: PaymentMethod.PAYKUN, paytm: PaymentMethod.PAYTM,
 };
 
-export const ADMIN_SUBSCRIPTION_MODULE = "admin-subscription";
-export const isAdminSubscriptionMysql = (): boolean => true;
 
 export const parseSubId = (id: string): number | null => {
   const n = Number(id);
@@ -286,15 +285,6 @@ async function* iterateCourseSubExportRows(q: CourseSubReportQuery, now: Date) {
 // Timestamps render as IST (Asia/Kolkata, UTC+5:30, no DST) in `YYYY-MM-DD HH:mm:ss`
 // 24-hour form, e.g. "2026-10-06 00:01:21" (was a raw UTC ISO string). Shift the
 // instant by +5:30 and read the wall-clock parts off the shifted value.
-const IST_OFFSET_MS = 330 * 60_000;
-const pad2 = (n: number): string => String(n).padStart(2, "0");
-const fmtExportDate = (d: Date | null | undefined): string => {
-  if (!d) return "";
-  const t = new Date(d);
-  if (Number.isNaN(t.getTime())) return "";
-  const s = new Date(t.getTime() + IST_OFFSET_MS);
-  return `${s.getUTCFullYear()}-${pad2(s.getUTCMonth() + 1)}-${pad2(s.getUTCDate())} ${pad2(s.getUTCHours())}:${pad2(s.getUTCMinutes())}:${pad2(s.getUTCSeconds())}`;
-};
 // Column order: the client's Subscription-WithMaterial-Report.csv set first, then
 // the extra columns the on-screen report shows. A row is either a course OR a
 // package, so only the matching name column is filled.

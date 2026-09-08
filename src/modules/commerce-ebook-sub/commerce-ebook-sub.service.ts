@@ -16,24 +16,13 @@
  */
 import { commerceEbookSubRepository as repo } from "./commerce-ebook-sub.repository";
 import { catalogEbookRepository } from "../catalog-ebook/catalog-ebook.repository";
-import { toEbookSubscriptionDto } from "./commerce-ebook-sub.transformer";
+
 import { toEbookDto } from "../catalog-ebook/catalog-ebook.transformer";
-import type { EbookSubscriptionDto } from "./commerce-ebook-sub.types";
+
 
 /** Whole-day difference (ceil), matching the controller's `daysBetween`. */
 const daysBetween = (from: Date, to: Date): number =>
   Math.max(0, Math.ceil((to.getTime() - from.getTime()) / 86_400_000));
-
-export const EBOOK_SUB_MODULE = "commerce-ebook-sub";
-
-/** Whether the ebook-subscription read-path is served from MySQL. */
-export const isEbookSubMysql = (): boolean => true;
-
-/** Parse a string id to a positive int, else null. */
-export const parseEbookSubId = (id: string): number | null => {
-  const n = Number(id);
-  return Number.isInteger(n) && n > 0 ? n : null;
-};
 
 // ── entitlement check (the access gate) ─────────────────────────────────────
 
@@ -48,49 +37,6 @@ export const hasActiveEbookSubscription = async (
 ): Promise<boolean> => {
   const row = await repo.findActiveSub(customerId, ebookId, now);
   return row !== null;
-};
-
-/** The active ebook entitlement row (e.g. for its endAt), or null. */
-export const getActiveEbookSubscription = async (
-  customerId: number,
-  ebookId: number,
-  now: Date = new Date()
-): Promise<EbookSubscriptionDto | null> => {
-  const row = await repo.findActiveSub(customerId, ebookId, now);
-  return row ? toEbookSubscriptionDto(row) : null;
-};
-
-// ── single / listings ───────────────────────────────────────────────────────
-
-export const findEbookSubscriptionById = async (
-  id: number
-): Promise<EbookSubscriptionDto | null> => {
-  const row = await repo.findById(id);
-  return row ? toEbookSubscriptionDto(row) : null;
-};
-
-export const findEbookSubscriptionByOrderId = async (
-  orderId: number
-): Promise<EbookSubscriptionDto | null> => {
-  const row = await repo.findByOrderId(orderId);
-  return row ? toEbookSubscriptionDto(row) : null;
-};
-
-/** All ebook subscriptions for a customer, newest first. */
-export const listEbookSubscriptionsByCustomer = async (
-  customerId: number
-): Promise<EbookSubscriptionDto[]> => {
-  const rows = await repo.listByCustomer(customerId);
-  return rows.map(toEbookSubscriptionDto);
-};
-
-/** Active ebook subscriptions for a customer (the "downloads" surface). */
-export const listActiveEbookSubscriptionsByCustomer = async (
-  customerId: number,
-  now: Date = new Date()
-): Promise<EbookSubscriptionDto[]> => {
-  const rows = await repo.listActiveByCustomer(customerId, now);
-  return rows.map(toEbookSubscriptionDto);
 };
 
 /**

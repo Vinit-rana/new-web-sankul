@@ -1,10 +1,8 @@
 import { clientPurchaseHistoryRepository as repo } from "./client-purchase-history.repository";
-import { formatPaymentMethod, formatPaymentType, resolvePaymentReference } from "../../utils/paymentMethod";
+import { formatPaymentMethod, formatPaymentType } from "../../utils/paymentMethod";
 import { COURIER } from "../../config/courier";
 import { liveSubDiscountAmount } from "../live-course-order/live-course-order.service";
 
-export const PURCHASE_HISTORY_MODULE = "client-purchase-history";
-export const isPurchaseHistoryMysql = (): boolean => true;
 
 export const parsePhId = (id: string): number | null => {
   const n = Number(id);

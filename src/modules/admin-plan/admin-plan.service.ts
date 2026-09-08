@@ -1,8 +1,6 @@
 import { adminPlanRepository as repo, OWNED } from "./admin-plan.repository";
 import { countPlanUsage, countPlanUsageOne } from "../../utils/planUsage";
 
-export const ADMIN_PLAN_MODULE = "admin-plan";
-export const isAdminPlanMysql = (): boolean => true;
 
 export const parsePlanId = (id: string): number | null => {
   const n = Number(id);

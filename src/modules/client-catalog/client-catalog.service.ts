@@ -25,8 +25,6 @@ import { getPurchasedMaterialIds, materialMediaToken } from "../client-material/
 import { examInCategoriesWhere, subjectStartedWhere } from "../catalog-exam/exam-category-pivot.where";
 import { buildPrismaSearch, matchesAllTokens } from "../../utils/searchFilter";
 
-export const CLIENT_CATALOG_MODULE = "client-catalog";
-export const isClientCatalogMysql = (): boolean => true;
 
 export const parseCatId = (id: string): number | null => {
   const n = Number(id);

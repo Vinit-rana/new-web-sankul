@@ -15,8 +15,6 @@
  */
 import { prisma } from "../../config/prisma";
 
-export const ADMIN_COURSE_VIDEO_MODULE = "admin-course-video";
-export const isAdminCourseVideoMysql = (): boolean => true;
 
 export const parseAcvId = (id: string): number | null => {
   const n = Number(id);

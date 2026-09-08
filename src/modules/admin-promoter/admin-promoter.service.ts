@@ -35,8 +35,6 @@ import {
  *   • ws_package_course_subscription has NO promocode_id → the dashboard's
  *     `promocodeId` scope filter is ignored and recent rows' `promocode` is null.
  */
-export const ADMIN_PROMOTER_MODULE = "admin-promoter";
-export const isAdminPromoterMysql = (): boolean => true;
 
 const SALT_ROUNDS = 10;
 

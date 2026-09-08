@@ -29,9 +29,7 @@ import type {
   MyOrderDto,
 } from "./book-order.types";
 
-export const BOOK_ORDER_MODULE = "book-order";
 
-export const isBookOrderMysql = (): boolean => true;
 
 export const parseBookOrderId = (id: string): number | null => {
   const n = Number(id);

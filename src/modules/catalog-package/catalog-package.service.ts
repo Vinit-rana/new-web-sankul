@@ -17,14 +17,10 @@ import { catalogPackageRepository as repo } from "./catalog-package.repository";
 import { toPackageDto, toPackageTypeDto } from "./catalog-package.transformer";
 import type { PackageDto, PackageTypeDto } from "./catalog-package.types";
 
-export const PACKAGE_TYPE_MODULE = "catalog-package-type";
-export const PACKAGE_MODULE = "catalog-package";
 
 /** Phase A — the package-type lookup branch (enabled). */
-export const isPackageTypeMysql = (): boolean => true;
 
 /** Phase B — the ws_package read branch (kept OFF until commerce wave). */
-export const isPackageMysql = (): boolean => true;
 
 /** Parse a string id to a positive int, else null. */
 export const parsePackageId = (id: string): number | null => {

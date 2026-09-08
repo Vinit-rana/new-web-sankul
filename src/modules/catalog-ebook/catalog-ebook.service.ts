@@ -28,8 +28,6 @@ import type {
   ListEbooksOptions,
 } from "./catalog-ebook.types";
 
-export const EBOOK_MODULE = "catalog-ebook";
-export const isEbookMysql = (): boolean => true;
 
 /** Parse a string id to a positive int, else null. */
 export const parseEbookId = (id: string): number | null => {

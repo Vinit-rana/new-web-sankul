@@ -843,16 +843,6 @@ export async function buildTestSeriesReceiptHtmlBySub(subId: string, customerId:
   return renderReceiptHtml(loaded);
 }
 
-// Course/package order receipt — same EJS template + Puppeteer pipeline as the
-// ebook/book receipts so all three invoices look identical. A "course order" is
-// a PackageCourseSubscription, which is either a course (courseId) or a package
-// (targetPackageId); the plan lives in `packageId` → PackageCourseEbookPrice.
-// Plan `duration` is in DAYS for course/package plans (same as ebook plans).
-export async function generateCourseReceipt(orderId: string, customerId: string): Promise<Buffer> {
-  const html = await buildCourseReceiptHtml(orderId, customerId);
-  return renderPdfFromHtml(html);
-}
-
 function formatDateTime(d?: Date | null): string {
   if (!d) return "-";
   const dt = new Date(d);

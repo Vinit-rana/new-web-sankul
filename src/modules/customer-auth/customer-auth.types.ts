@@ -41,11 +41,6 @@ export interface CustomerProfileDto {
   isProfileCompleted: boolean;
 }
 
-export interface SetOtpInput {
-  otp: string;
-  otpExpiresAt: Date;
-}
-
 export interface CreateTokenInput {
   customerId: number;
   token: string;

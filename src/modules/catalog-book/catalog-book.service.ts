@@ -26,8 +26,6 @@ import type {
   ListBooksOptions,
 } from "./catalog-book.types";
 
-export const BOOK_MODULE = "catalog-book";
-export const isBookMysql = (): boolean => true;
 
 /**
  * Books whose own `terms_and_conditions` is empty fall back to the module-level

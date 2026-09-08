@@ -36,7 +36,6 @@ import type {
   SnapshotPlanKind,
 } from "./order-code-snapshot.types";
 
-export const ORDER_CODE_SNAPSHOT_MODULE = "order-code-snapshot";
 
 /**
  * The purchased plan, read from whichever table `planKind` names, in the one

@@ -5,8 +5,6 @@ import { buildPagination } from "../../utils/listQuery";
 import { resolveAncestors } from "../../utils/categoryAncestors";
 import type { MaterialCategory, Material } from "@prisma/client";
 
-export const ADMIN_MATERIAL_MODULE = "admin-material";
-export const isAdminMaterialMysql = (): boolean => true;
 
 export const parseMaterialId = (id: string): number | null => {
   const n = Number(id);

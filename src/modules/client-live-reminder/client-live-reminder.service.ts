@@ -22,8 +22,6 @@ import {
 import { prisma } from "../../config/prisma";
 import logger from "../../utils/logger";
 
-export const CLIENT_LIVE_REMINDER_MODULE = "client-live-reminder";
-export const isClientLiveReminderMysql = (): boolean => true;
 
 export const parseReminderId = (id: string | number | null | undefined): number | null => {
   const n = Number(id);

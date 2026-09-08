@@ -1,8 +1,6 @@
 import { adminExamRepository as repo } from "./admin-exam.repository";
 import { setExamCategories, validateLeafCategoryIds } from "../catalog-exam/exam-category-pivot.where";
 
-export const ADMIN_EXAM_MODULE = "admin-exam";
-export const isAdminExamMysql = (): boolean => true;
 
 export const parseExamId = (id: string): number | null => {
   const n = Number(id);

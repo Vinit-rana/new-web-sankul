@@ -3,9 +3,7 @@ import { prisma } from "../../config/prisma";
 import { buildPrismaSearch } from "../../utils/searchFilter";
 import { nextOrder } from "../../utils/listOrdering";
 
-export const REFERRAL_CONTENT_MODULE = "referral-content";
 
-export const isReferralContentMysql = (): boolean => true;
 
 export const parseRcId = (id: string): number | null => {
   const n = Number(id);

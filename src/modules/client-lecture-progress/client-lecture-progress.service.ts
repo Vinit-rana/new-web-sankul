@@ -19,8 +19,6 @@ import { buildPrismaSearch, matchesAllTokens } from "../../utils/searchFilter";
  * heartbeats still write Mongo (or vice-versa) would split the data, so flag stays
  * OFF until the heartbeat + reads flip together.
  */
-export const LECTURE_PROGRESS_MODULE = "client-lecture-progress";
-export const isLectureProgressMysql = (): boolean => true;
 
 /**
  * Dedicated sub-flag for the CONTAINER (course/package/liveCourse) progress path
@@ -29,8 +27,6 @@ export const isLectureProgressMysql = (): boolean => true;
  * READ hub MUST flip together (enabling one alone splits progress data across
  * SQL/Mongo). Flip `lecture-progress-container` only when the whole hub is ready.
  */
-export const LECTURE_PROGRESS_CONTAINER_MODULE = "lecture-progress-container";
-export const isLectureProgressContainerMysql = (): boolean => true;
 
 export const parseLpId = (id: string): number | null => {
   const n = Number(id);
@@ -930,30 +926,6 @@ export const buildResumeDashboard = async (customerId: number): Promise<{ resume
     recentPackage: withVideoProgress(cards.find((c: any) => c.type === "package")),
   };
 };
-
-/**
- * Per-video resume badges (positionSec/durationSec/completed/lastWatchedAt) for
- * a customer over a set of videoIds. Shared by the inline "Continue" sliver in
- * catalog/course/live-recordings listings. Returns a Map keyed by videoId.
- */
-export const progressBadgesByVideo = async (
-  customerId: number,
-  videoIds: number[]
-): Promise<Map<number, any>> => {
-  if (!videoIds.length) return new Map();
-  const rows = await prisma.lectureProgress.findMany({
-    where: { customerId, videoId: { in: videoIds } },
-    select: { videoId: true, positionSec: true, durationSec: true, completed: true, completedAt: true, lastWatchedAt: true },
-  });
-  return new Map(rows.map((r) => [r.videoId!, r]));
-};
-
-/** Validate a free video for the heartbeat: exists + live + priceType=free. */
-export const findFreeVideo = (videoId: number) =>
-  prisma.video.findFirst({
-    where: { id: videoId, status: true, priceType: "free" },
-    select: { id: true },
-  });
 
 /** Does the video exist at all (live), regardless of price? (404 vs 403 split) */
 export const findLiveVideo = (videoId: number) =>

@@ -2,8 +2,6 @@ import { clientCartRepository as repo } from "./client-cart.repository";
 import { resolveShippingIdForAddress } from "../customer-shipping/customer-shipping.service";
 import { getFreeShippingMin } from "../book-order/book-order.service";
 
-export const CLIENT_CART_MODULE = "client-cart";
-export const isClientCartMysql = (): boolean => true;
 
 export const parseCartId = (id: string): number | null => {
   const n = Number(id);

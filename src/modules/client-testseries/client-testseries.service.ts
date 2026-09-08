@@ -19,8 +19,6 @@ import { prisma } from "../../config/prisma";
 import { computeDaysLeft } from "../../utils/planDuration";
 import { buildPrismaSearch } from "../../utils/searchFilter";
 
-export const CLIENT_TESTSERIES_MODULE = "client-testseries";
-export const isClientTestSeriesMysql = (): boolean => true;
 
 export const parseCtsId = (id: string): number | null => {
   const n = Number(id);

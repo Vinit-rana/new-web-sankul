@@ -7,26 +7,6 @@ const categoryRefSchema = z.object({
   order: z.number().int().nonnegative().optional(),
 });
 
-export const createCourseSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  subtitle: z.string().optional(),
-  description: z.string().min(1, "Description is required"),
-  image: z.string().url("Image must be a valid URL"),
-  ordered: z.number().int("Ordered must be an integer"),
-  shareableLink: z.string().optional(),
-  withMaterial: z.string().optional(),
-  withoutMaterial: z.string().optional(),
-  level: z.string().min(1, "Level is required"),
-  status: z.boolean(),
-  isPaid: z.boolean().optional(),
-  isPopular: z.boolean().optional(),
-  courseEducatorId: z.string().regex(/^([0-9a-fA-F]{24}|[1-9]\d*)$/, "Invalid ObjectId").optional(),
-  courseSubjectCategoryId: z.string().regex(/^([0-9a-fA-F]{24}|[1-9]\d*)$/, "Invalid ObjectId").optional(),
-  videoCategoryId: z.string().regex(/^([0-9a-fA-F]{24}|[1-9]\d*)$/, "Invalid ObjectId").optional(),
-  materialCategories: z.array(categoryRefSchema).optional(),
-  examCategories: z.array(categoryRefSchema).optional(),
-});
-
 // SQL branch: ids are numeric (the Mongo schema enforces ObjectId). Same shape.
 const sqlCategoryRefSchema = z.object({
   category: z.coerce.number().int().positive(),

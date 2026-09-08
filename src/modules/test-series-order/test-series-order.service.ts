@@ -6,23 +6,6 @@ import { computeEndAt } from "../../utils/planDuration";
 import { creditReferrer } from "../../client/referral/credit-referrer";
 import { debitWallet } from "../../client/referral/debit-wallet";
 
-/**
- * Test-series payment + subscription write path on SQL (Wave 7 — net-new tables
- * ws_test_series / _price / _order / _subscription). Mirrors the live-course-order
- * shape but with a separate ws_test_series_order table (3-ish-table: order →
- * subscription at verify, no tracking row).
- *
- * ⚠ price-plan duration is DAYS (durationDays column; computeEndAt asDays:true).
- * Idempotent verify + dual-read fallback (SQL first, Mongo on miss).
- */
-export const TEST_SERIES_ORDER_MODULE = "test-series-order";
-export const isTestSeriesOrderMysql = (): boolean => true;
-
-export const parseTsId = (id: string): number | null => {
-  const n = Number(id);
-  return Number.isInteger(n) && n > 0 ? n : null;
-};
-
 const num = (v: any): number => (v == null ? 0 : Number(v.toString?.() ?? v) || 0);
 
 // ── reads for apply-promo / create-order ──────────────────────────────────────

@@ -8,9 +8,7 @@ import { prisma } from "../../config/prisma";
  * in-code registry: only fields that actually exist in the tables are surfaced
  * (permission `id`/`name`, and the owning category's `id`/`title`/`slug`).
  */
-export const PERMISSION_CATALOG_MODULE = "permission-catalog";
 
-export const isPermissionCatalogMysql = (): boolean => true;
 
 export interface CatalogPermissionRow {
   id: string;
@@ -24,19 +22,6 @@ export interface CatalogCategory {
   orderBy: number | null;
   permissions: CatalogPermissionRow[];
 }
-
-/**
- * Distinct permission names currently stored in ws_permissions. Pass `guard` to
- * restrict to one guard (used by the guard-scoped catalog endpoint so the
- * deprecated set for a promoter role only reflects promoter-guard rows).
- */
-export const getStoredPermissionNames = async (guard?: string): Promise<string[]> => {
-  const rows = await prisma.adminPermissionRow.findMany({
-    where: guard ? { guardName: guard } : undefined,
-    select: { name: true },
-  });
-  return rows.map((r) => r.name);
-};
 
 /**
  * Build the guard-scoped catalog straight from the DB: every ws_permissions row

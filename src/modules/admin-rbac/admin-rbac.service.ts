@@ -1,8 +1,6 @@
 import { adminRbacRepository as repo } from "./admin-rbac.repository";
 import { invalidateAllAdminPermissions } from "../admin-auth/admin-permission-resolver";
 
-export const RBAC_MODULE = "admin-rbac";
-export const isRbacMysql = (): boolean => true;
 
 export const parseRbacId = (id: string): bigint | null => {
   try {

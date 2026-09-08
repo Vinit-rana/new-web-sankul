@@ -24,8 +24,6 @@ import { buildPrismaSearch, searchTokens } from "../../utils/searchFilter";
 import { sendPush } from "../../utils/fcm";
 import logger from "../../utils/logger";
 
-export const ADMIN_NOTIFICATION_MODULE = "client-notification";
-export const isAdminNotificationMysql = (): boolean => true;
 
 /** Parse a numeric string id to a positive int, else null. */
 export const parseIntId = (v: string): number | null => {

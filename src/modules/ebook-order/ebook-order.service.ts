@@ -29,9 +29,7 @@ import type {
   EbookOrderRow,
 } from "./ebook-order.types";
 
-export const EBOOK_ORDER_MODULE = "ebook-order";
 
-export const isEbookOrderMysql = (): boolean => true;
 
 export const parseEbookOrderId = (id: string): number | null => {
   const n = Number(id);

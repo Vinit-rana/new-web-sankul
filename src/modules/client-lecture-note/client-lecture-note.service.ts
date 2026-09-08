@@ -16,8 +16,6 @@ import { prisma } from "../../config/prisma";
 import { signMediaToken } from "../../utils/mediaToken";
 import { buildPrismaSearch, matchesAllTokens } from "../../utils/searchFilter";
 
-export const LECTURE_NOTE_MODULE = "client-lecture-note";
-export const isLectureNoteMysql = (): boolean => true;
 
 export const parseLnId = (id: string): number | null => {
   const n = Number(id);

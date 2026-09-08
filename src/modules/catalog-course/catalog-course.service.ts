@@ -33,8 +33,6 @@ import type {
 } from "./catalog-course.types";
 import type { PriceDto } from "../commerce-price/commerce-price.types";
 
-export const COURSE_MODULE = "catalog-course";
-export const isCourseMysql = (): boolean => true;
 
 /** Parse a string id to a positive int, else null. */
 export const parseCourseId = (id: string): number | null => {

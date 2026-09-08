@@ -34,9 +34,8 @@ import { prisma } from "../../config/prisma";
 import { andWhere, statusWhere, normalizeStatus, reportRow } from "../../utils/reportFilters";
 import { buildPagination } from "../../utils/listQuery";
 import { splitFullName } from "../customer-profile/customer-profile.name";
+import { fmtExportDate } from "../../utils/csvExport";
 
-export const ADMIN_TESTSERIES_MODULE = "admin-testseries";
-export const isAdminTestSeriesMysql = (): boolean => true;
 
 export const parseAtsId = (id: string): number | null => {
   const n = Number(id);
@@ -971,15 +970,6 @@ async function* iterateSubExportRows(opts: SubReportOpts, now: Date) {
 
 // IST (Asia/Kolkata, +5:30, no DST) `YYYY-MM-DD HH:mm:ss`, e.g. "2026-10-06 00:01:21"
 // — same format as the Subscription export (was a raw UTC ISO string).
-const IST_OFFSET_MS = 330 * 60_000;
-const pad2 = (n: number): string => String(n).padStart(2, "0");
-const fmtExportDate = (d: Date | string | null | undefined): string => {
-  if (!d) return "";
-  const t = new Date(d);
-  if (Number.isNaN(t.getTime())) return "";
-  const s = new Date(t.getTime() + IST_OFFSET_MS);
-  return `${s.getUTCFullYear()}-${pad2(s.getUTCMonth() + 1)}-${pad2(s.getUTCDate())} ${pad2(s.getUTCHours())}:${pad2(s.getUTCMinutes())}:${pad2(s.getUTCSeconds())}`;
-};
 
 // Column set follows the Subscription export order so the reports line up, minus the
 // columns that don't apply to a digital test series and were dropped per FE request:

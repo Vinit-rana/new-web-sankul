@@ -82,38 +82,3 @@ export interface PlanLinkPercentages {
   customerPercentage: number;
   promoterPercentage: number;
 }
-
-/**
- * Resolve the discount for a single plan given its base price and the per-plan
- * map (keyed by stringified planId, loaded by the SQL promo-code service). Falls
- * back to the legacy global discount when the plan has no link row.
- */
-export function resolvePlanDiscount(
-  promo: PromoDiscountInput,
-  planId: string | number,
-  basePrice: number,
-  planDiscountMap: Map<string, PlanLinkPercentages>
-): PerPlanDiscount {
-  if (!(basePrice > 0))
-    return { amount: 0, appliedPercentage: null, promoterPercentage: 0, source: "legacy" };
-
-  const link = planDiscountMap.get(String(planId));
-  if (link !== undefined && link.customerPercentage > 0) {
-    const amount = Math.min(
-      basePrice,
-      Math.max(0, Math.round((basePrice * link.customerPercentage) / 100))
-    );
-    return {
-      amount,
-      appliedPercentage: link.customerPercentage,
-      promoterPercentage: link.promoterPercentage,
-      source: "per-plan",
-    };
-  }
-
-  // Legacy fallback: top-level discountValue/discountType. Legacy codes have no
-  // per-plan promoter split, so promoterPercentage is 0 here.
-  const amount = computePromoDiscount(promo, basePrice);
-  const appliedPercentage = promo.discountType === "percentage" ? Number(promo.discountValue ?? 0) : null;
-  return { amount, appliedPercentage, promoterPercentage: 0, source: "legacy" };
-}

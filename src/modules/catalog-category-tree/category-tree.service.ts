@@ -12,8 +12,6 @@
  */
 import { prisma } from "../../config/prisma";
 
-export const CATEGORY_TREE_MODULE = "catalog-category-tree";
-export const isCategoryTreeMysql = (): boolean => true;
 
 const MAX_DEPTH = 20; // generous cap; real trees are <6 deep. Guards cycles.
 

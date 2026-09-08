@@ -2,8 +2,6 @@ import { promoterDataRepository as repo } from "./promoter-data.repository";
 import { prisma } from "../../config/prisma";
 import { buildPrismaSearch } from "../../utils/searchFilter";
 
-export const PROMOTER_DATA_MODULE = "promoter-data";
-export const isPromoterDataMysql = (): boolean => true;
 
 export const parsePromoterId = (id: string): number | null => {
   const n = Number(id);

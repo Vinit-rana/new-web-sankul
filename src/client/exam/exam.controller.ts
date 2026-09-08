@@ -87,21 +87,8 @@ export const listExamsByCategory = async (req: Request, res: Response) => {
 //   ?year=YYYY             -> months     [{ year, month, label, testsCount }]
 //   ?year&month            -> weeks      [{ week, label, startDate, endDate, testsCount }]
 //   ?year&month&week       -> tests      (same shape as before, decorated per-customer)
-const MONTH_LABELS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
-// Week 1 = days 1–7, Week 2 = 8–14, Week 3 = 15–21, Week 4 = 22–28, Week 5 = 29–end.
-const weekOfMonth = (day: number) => (day <= 28 ? Math.ceil(day / 7) : 5);
-const weekRange = (year: number, month: number, week: number) => {
-  const startDay = (week - 1) * 7 + 1;
-  const start = new Date(year, month - 1, startDay, 0, 0, 0, 0);
-  const end =
-    week === 5
-      ? new Date(year, month, 0, 23, 59, 59, 999) // last day of month
-      : new Date(year, month - 1, startDay + 6, 23, 59, 59, 999);
-  return { start, end };
-};
+// The year/month/week bucketing itself lives in utils/dateBuckets and is applied
+// by the service (svcGetDailyExams); this handler only validates the query params.
 
 export const getDailyExams = async (req: Request, res: Response) => {
   const traceId = req.traceId;

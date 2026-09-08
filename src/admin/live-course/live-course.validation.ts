@@ -33,12 +33,6 @@ export const createLiveCourseSchema = z
   })
   .strict();
 
-// All fields optional for PATCH, but reject unknowns and require at least one.
-export const updateLiveCourseSchema = createLiveCourseSchema
-  .partial()
-  .strict()
-  .refine((v) => Object.keys(v).length > 0, { message: "Provide at least one field to update." });
-
 // SQL branch: ref ids are numeric (the Mongo schema enforces ObjectId). Same
 // shape, numeric ids. examCountdown*/materialCategories/examCategories pass
 // through as arrays (stored as JSON; not validated against Mongo collections).

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { EBookLanguage, PackageCourseEbookOrderStatus, PackageCourseEbookPaymentType, PaymentMethod } from "../../shared/enums";
+import { EBookLanguage, PaymentMethod } from "../../shared/enums";
 
 const objectIdRegex = /^([0-9a-fA-F]{24}|[1-9]\d*)$/;
 // On the SQL (MySQL) branch the attached countdown/category ids are numeric
@@ -112,15 +112,6 @@ export const updateEbookSubscriptionSchema = z.object({
   // these; ebook was the only one that did not.
   startAt: z.string().optional(),
   endAt: z.string().optional(),
-});
-
-export const reorderEbooksSchema = z.object({
-  orders: z.array(
-    z.object({
-      id: z.string().regex(objectIdRegex, "Invalid ebook ID"),
-      order: z.number().int().nonnegative(),
-    })
-  ).min(1, "orders array must not be empty"),
 });
 
 // SQL branch: ids are numeric (the Mongo schema enforces ObjectId). Same shape.

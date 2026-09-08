@@ -12,8 +12,6 @@
 import { prisma } from "../../config/prisma";
 import { matchesAllTokens } from "../../utils/searchFilter";
 
-export const CLIENT_WISHLIST_MODULE = "client-wishlist";
-export const isClientWishlistMysql = (): boolean => true;
 
 export const parseWlId = (id: string): number | null => {
   const n = Number(id);

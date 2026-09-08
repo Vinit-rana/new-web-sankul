@@ -18,8 +18,6 @@ import { getActivePackageSubMap } from "../commerce-subscription/commerce-subscr
 import { computeDaysLeft } from "../../utils/planDuration";
 import { buildShareUrl } from "../../deeplinking/shareRedirect";
 
-export const PACKAGE_CATEGORY_MODULE = "package-category";
-export const isPackageCategoryMysql = (): boolean => true;
 
 export const parsePkgCatId = (id: string): number | null => {
   const n = Number(id);

@@ -14,12 +14,8 @@ import {
   guardOnlyQuerySchema,
 } from "./permission.validation";
 import * as permissionService from "./permission.service";
+import { formatZodIssues as formatZodErrors } from "../../utils/httpResponse";
 
-const formatZodErrors = (issues: any[]) =>
-  issues.reduce<Record<string, string>>((acc, i) => {
-    acc[i.path.join(".")] = i.message;
-    return acc;
-  }, {});
 
 export const listPermissions = asyncHandler(async (req: Request, res: Response) => {
   const parsed = listQuerySchema.safeParse(req.query);

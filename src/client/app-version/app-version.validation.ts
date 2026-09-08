@@ -22,5 +22,3 @@ export const checkAppVersionQuerySchema = z
       .optional(),
   })
   .strict();
-
-export type CheckAppVersionQuery = z.infer<typeof checkAppVersionQuerySchema>;

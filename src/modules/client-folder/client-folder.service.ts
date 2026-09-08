@@ -15,8 +15,6 @@ import { buildPrismaSearch } from "../../utils/searchFilter";
  * join resolves correctly — the earlier "staging Mongo content ≠ SQL" worry only
  * affected the BACKFILL (which stored refId 0), not the live path.
  */
-export const FOLDER_MODULE = "client-folder";
-export const isFolderMysql = (): boolean => true;
 
 export const parseFolderId = (id: string): number | null => {
   const n = Number(id);

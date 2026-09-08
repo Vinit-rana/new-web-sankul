@@ -15,8 +15,6 @@ import { prisma } from "../../config/prisma";
 import { nextOrder } from "../../utils/listOrdering";
 import { buildPrismaSearch } from "../../utils/searchFilter";
 
-export const EXAM_COUNTDOWN_MODULE = "exam-countdown";
-export const isExamCountdownMysql = (): boolean => true;
 
 export const parseEcId = (id: string): number | null => {
   const n = Number(id);

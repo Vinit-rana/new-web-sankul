@@ -32,8 +32,6 @@
  */
 import { prisma } from "../../config/prisma";
 
-export const PDF_UPLOAD_MODULE = "pdf-upload";
-export const isPdfUploadMysql = (): boolean => true;
 
 export const parsePdfId = (id: string | number | null | undefined): number | null => {
   const n = Number(id);

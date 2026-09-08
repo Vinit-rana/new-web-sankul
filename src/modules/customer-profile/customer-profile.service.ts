@@ -19,7 +19,6 @@ import { splitFullName, joinFullName } from "./customer-profile.name";
 import type { ProfileUpdateInput } from "./customer-profile.types";
 import { parseGoalSelection, parseLabels, type GoalSelection } from "../../utils/goalSelection";
 
-export const PROFILE_MODULE = "customer-profile";
 
 type Ok<T> = { ok: true; message: string; data: T };
 type Err = { ok: false; message: string };

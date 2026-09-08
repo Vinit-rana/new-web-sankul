@@ -7,7 +7,6 @@ import {
   getOwnedCourseIds,
 } from "../admin-live-course/admin-live-course.service";
 
-export const CLIENT_RECENTLY_ADDED_MODULE = "client-recently-added";
 
 export const parseCustomerId = (id: string): number | null => {
   const n = Number(id);

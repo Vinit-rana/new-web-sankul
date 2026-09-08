@@ -76,14 +76,6 @@ export function bucketFormatFor(
   }
 }
 
-export interface OverviewOptions {
-  rangeRaw?: string;
-  startDate?: string;
-  endDate?: string;
-  promocodeId?: string;
-  traceId?: string;
-}
-
 // NOTE: the Mongo `buildOverview` / `buildAllPromotersOverview` aggregates were
 // removed during the MySQL migration — they had NO live caller (the per-promoter
 // overview is served by the SQL twin `modules/promoter-data` →

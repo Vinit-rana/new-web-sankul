@@ -35,7 +35,6 @@ import {
   type VideoScopeKind,
 } from "./offline-video-download.types";
 
-export const OFFLINE_VIDEO_DOWNLOAD_MODULE = "offline-video-download";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const daysLeftOf = (endAt: Date | null, now: Date) =>

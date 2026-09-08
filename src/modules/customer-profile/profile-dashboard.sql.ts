@@ -13,7 +13,6 @@
  */
 import { prisma } from "../../config/prisma";
 
-export const isProfileMysql = (): boolean => true;
 
 /** Active saved addresses for a customer. */
 export const savedAddressCount = (customerId: number) =>

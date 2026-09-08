@@ -46,6 +46,3 @@ export interface PriceDto {
   createdAt: Date | null;
   updatedAt: Date | null;
 }
-
-/** Which owning entity a price row belongs to. */
-export type PriceOwner = "package" | "course" | "ebook";

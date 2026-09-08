@@ -11,7 +11,6 @@ import { CacheEntity } from "../../middlewares/flushGroups";
 import * as adminEbook from "../../modules/admin-ebook/admin-ebook.service";
 
 // Re-exported so the thin controllers can branch validation (numeric vs ObjectId).
-export const isAdminEbookMysql = adminEbook.isAdminEbookMysql;
 export const parseEbookId = adminEbook.parseEbookId;
 
 // On the SQL branch ids are numeric.

@@ -6,8 +6,6 @@ import { buildPagination } from "../../utils/listQuery";
 import { countPlanUsage, countPlanUsageOne } from "../../utils/planUsage";
 import type { Course } from "@prisma/client";
 
-export const ADMIN_COURSE_MODULE = "admin-course";
-export const isAdminCourseMysql = (): boolean => true;
 
 export const parseCourseId = (id: string): number | null => {
   const n = Number(id);

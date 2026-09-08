@@ -23,8 +23,6 @@ import logger from "../../utils/logger";
 // Row timestamp/window fields are snake-cased on `Promocode`
 // (promo_start_at / promo_expire_at / created_at / updated_at); the
 // discount/appliesTo columns keep their camelCase Prisma names via @map.
-export const PROMO_CODE_MODULE = "promo-code";
-export const isPromoCodeMysql = (): boolean => true;
 
 export const parsePcId = (id: string): number | null => {
   const n = Number(id);
@@ -1480,21 +1478,6 @@ export const getPromocodePlansSql = async (query: {
     examTypes: Array.from(examTypes, ([id, name]) => ({ id, name })),
     entities,
   };
-};
-
-/**
- * Resolve the validPlans map for a syncPlanLinksSql call from appliesTo.
- *
- * The value is a LIST because `planId` is not unique across plan tables — see
- * ValidPlanMap. A single-type promocode can never collide (one table), but the
- * shape is shared with resolveValidPlansMultiSql, which can.
- */
-export const resolveValidPlansSql = async (
-  type: AppliesToType,
-  entityIds: number[]
-): Promise<ValidPlanMap> => {
-  const resolved = await loadPlansForEntitiesSql(type, entityIds);
-  return new Map(resolved.map((p) => [p.id, [p]]));
 };
 
 /**

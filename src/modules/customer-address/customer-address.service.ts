@@ -12,8 +12,6 @@ import { customerAddressRepository as repo } from "./customer-address.repository
 import { toAddressDto } from "./customer-address.transformer";
 import type { AddressCreateInput, AddressUpdateInput } from "./customer-address.types";
 
-export const ADDRESS_MODULE = "customer-address";
-export const isAddressMysql = (): boolean => true;
 
 /** Parse a string id (route param / customer id) to a positive int, else null. */
 export const parseAddressId = (id: string): number | null => {

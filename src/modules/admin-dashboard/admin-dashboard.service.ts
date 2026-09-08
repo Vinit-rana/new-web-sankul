@@ -13,7 +13,6 @@
 import { prisma } from "../../config/prisma";
 import * as dashTransformer from "./admin-dashboard.transformer";
 
-export const isAdminDashboardMysql = (): boolean => true;
 
 type Win = { start: Date; end: Date };
 export type BucketUnit = "hour" | "day" | "month";
