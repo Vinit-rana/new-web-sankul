@@ -1,5 +1,86 @@
 # StreamOS v1 API — Open Questions for the StreamOS Team (2026-09-01)
 
+> ## 🔌 FIRST LIVE PROBE 2026-09-09 — key works; two docs-vs-reality gaps
+>
+> `sk_live_…` received and set. `scripts/probe-streamos-v1.ts` run read-only against the
+> real API. **Authentication, envelope, `/assets/`, `/assets/{id}/` and `/livestreams/`
+> all behave as documented.** The organization already holds 60 assets and 0 livestreams.
+>
+> | Finding | Severity | Action |
+> |---|---|---|
+> | `renditions[].playlist_url`, not `.url` as documented | **Bug — every rendition silently dropped, so finished recordings showed none** | Fixed in `toAsset()` |
+> | `video.hls_manifest_url` null on COMPLETED, non-DRM assets | Degradation — no ABR master, `recordings[0]` becomes 240p | Tolerated; ask StreamOS |
+> | 720p rendition `playlist_url` points at the 480p path | Vendor bug | Raise with StreamOS |
+>
+> **Add to the StreamOS ask:**
+> - Why is `video.hls_manifest_url` null on COMPLETED assets that are not DRM? The docs
+>   describe it as the single playback URL.
+> - The 720p rendition URL resolves to the 480p directory.
+>
+> ### Still outstanding before any v1 cutover
+>
+> 1. **Q2 / Q4** — unchanged, and still the only true blockers. Worth adding: if the old
+>    URLs are being retired, how long do they stay readable, so the back catalogue can be
+>    re-ingested via `POST /videos/` with `source_url`?
+> 2. **Webhook not registered.** `STREAMOS_WEBHOOK_SIGNING_SECRET` is still empty. It is
+>    returned once by `POST /webhooks/`, which needs a **public HTTPS URL** — so this must
+>    be done from staging or production, never from a laptop. Until it is set,
+>    `verifyStreamosSignature` rejects every delivery with 401 and **recordings never
+>    attach to sessions.**
+> 3. **Encoding settings** must be configured org-wide in the dashboard, or
+>    `POST /livestreams/{id}/start/` returns `409 TRANSCODE_NOT_CONFIGURED` at go-live.
+> 4. **DDL on staging + production** — `2026-09-01_streamos_v1_live_session.sql`, verified
+>    on the dev DB only.
+> 5. **Write path unproven.** `PROBE_WRITE=1` exercises create + end, but takes a slot from
+>    the shared org pool. Run it outside class hours before the first real class.
+
+> ## ✅ VERDICT 2026-09-09 — full docs re-read; only Q2 and Q4 still block
+>
+> Re-read `https://streamos.in/docs` end to end (`/authentication`, `/errors`, `/livestreams`,
+> `/playback`, `/webhooks`, `/webhooks/events`). **Five of the eight questions are now answered
+> by the documentation itself and should NOT be sent.** What is left is not technical.
+>
+> | # | Status | Answer from the docs |
+> |---|---|---|
+> | 1 | **ANSWERED** | `VIDEO_TRANSCODING_COMPLETED` carries a `stream` object with `id` (the livestream public id) **and** `stream_key`. `LIVESTREAM_RECORDING_READY` carries only `recording.asset_id` — *"the only place it is announced — keep it."* Our `resolveSession` already tries stream_key → customTags → stream.public_id → recorded_asset_id, which covers both events. **No longer a blocker.** |
+> | 2 | **STILL OPEN — the only real blocker** | The new docs contain **zero references** to `streamapi.streamos.co`. No migration guide, no deprecation notice, nothing about existing assets. Cannot be resolved by reading; must come from StreamOS. |
+> | 3 | **ANSWERED** | `409 API_KEY_EXISTS` — one live key per organization. Confirms staging and prod share one credential; `STREAMOS_ENV_TAG` + the `wsEnv` tag is the mitigation, already implemented. |
+> | 4 | **STILL OPEN** | Not addressed anywhere in the docs. The legacy `createStream` now returning **400** (2026-09-09, see `MIGRATION_QUERY_CHANGES.md`) suggests it is already being wound down. |
+> | 5 | **ANSWERED** | Verbatim: *"No `LIVE` status exists. The API has no signal for encoder connection, so active broadcasts remain marked `READY_TO_STREAM`."* Our `deriveIsLiveV1` heuristic is the correct and only option. Abandoned streams auto-close after 24h. |
+> | 6 | **ANSWERED** | Concurrency + trial limits are enforced **at stream start, not at scheduling**; `POST /livestreams/` is 10/min per organization; slots are a shared org-wide pool freed by `POST /livestreams/{id}/end/`. |
+> | 7 | **ANSWERED** | DRM assets *"currently cannot be played"* — no licence server; `hls_manifest_url` returns `null` and output is DASH. Additionally `drm` on livestream create is now **ignored entirely** (documented breaking change). We already send `drm: false` and the webhook already refuses DRM/DASH-only payloads. |
+> | 8 | **STILL UNDOCUMENTED** | Pagination is not described. Low impact — nothing paginates the asset library today. |
+>
+> ### New facts found on this read (not previously captured)
+>
+> 1. **`TRANSCODE_NOT_CONFIGURED` (409) on `POST /livestreams/{id}/start/`** — *"Encoding settings
+>    must be configured organization-wide; unconfigured orgs receive `TRANSCODE_NOT_CONFIGURED`
+>    on start attempt."* **This is a dashboard pre-flight the account owner must complete before
+>    the first v1 go-live**, and it fails at exactly the moment an admin presses Go Live. Newly
+>    added to the owner's checklist.
+> 2. **Webhook signature payload is `{timestamp}.{rawBody}`** — previously marked UNCONFIRMED in
+>    `utils/streamosSignature.ts`. Comment corrected; the body-only fallback is retained until a
+>    real delivery logs `scheme: "timestamped"`.
+> 3. **Webhook delivery contract**: 6 retries at ~1m / 5m / 25m / 2h / 10h, **2xx required within
+>    10 seconds**. Our handler claims the delivery id before doing any work, so a slow
+>    auto-promote produces ignored replays rather than duplicated `ws_video` rows — acceptable,
+>    but the 10s ceiling is now a known constraint on `applyEvent`.
+> 4. **Playback manifests are public**: *"no token, no expiry and no sign-in… treat the URL as
+>    the secret."* Our `utils/videoEncryption.ts` wrapper already keeps them off the client, so
+>    the contract is unchanged — but a leaked v1 manifest URL never expires.
+> 5. **OBS**: `rtmp_url` embeds the signature — paste into Server, leave Stream Key **blank**.
+>    `rtmp_server_url` / `rtmp_server_key` are returned separately for split-credential encoders
+>    (already mapped in `streamos.v1.service.ts:218`).
+> 6. **Push credentials expire 24h after minting** — confirms the provision/start split in
+>    `streamos.provider.ts` (reserve at schedule, mint at go-live) is the correct design.
+>
+> ### Verdict on the code
+>
+> **No implementation change is required by these docs.** The v1 client, provider facade,
+> webhook handler and signature verifier all match the published contract. What remains is
+> operational: credentials, the encoding-settings pre-flight, DDL on staging/prod, and the
+> two vendor answers (Q2, Q4).
+
 > ## ⚠ CORRECTION 2026-09-01 — Q1 was based on a misreading
 >
 > **A correlation field IS documented.** The v1 **Video payload** carries a `stream`

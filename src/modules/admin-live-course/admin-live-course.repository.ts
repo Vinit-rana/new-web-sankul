@@ -373,9 +373,43 @@ export const adminLiveCourseRepository = {
       : Promise.resolve([]),
 
   // ── chat (ws_live_chat_message / ws_live_chat_ban) ──────────────────────────
-  chatHistory: (liveClassId: string, limit: number, before?: Date) =>
+  // `filter` narrows the listing to ONE chat mode, and for a private listing to
+  // one viewer's thread. Both are optional so the unfiltered call still returns
+  // every mode, which is what the admin history endpoint wants by default.
+  //   isPrivate  — the mode the message was sent under (is_private column).
+  //   viewerId   — restrict to rows this customer may see. Omit for the host,
+  //                who sees the whole private thread.
+  //
+  // A viewer's private listing is three things, not one:
+  //   1. their own messages
+  //   2. host replies ADDRESSED to them (target_customer_id = them)
+  //   3. host messages addressed to NOBODY (is_admin + target NULL) — the host
+  //      talking to the class. Private hides students from each other; it does
+  //      not hide the host from the class.
+  // A host reply addressed to someone else is excluded by all three, which is
+  // what stops one student reading another's thread.
+  chatHistory: (
+    liveClassId: string,
+    limit: number,
+    before?: Date,
+    filter?: { isPrivate?: boolean; viewerId?: number | null }
+  ) =>
     prisma.liveChatMessage.findMany({
-      where: { liveClassId, deletedAt: null, ...(before ? { createdAt: { lt: before } } : {}) },
+      where: {
+        liveClassId,
+        deletedAt: null,
+        ...(filter?.isPrivate !== undefined ? { isPrivate: filter.isPrivate } : {}),
+        ...(filter?.viewerId != null
+          ? {
+              OR: [
+                { customerId: filter.viewerId },
+                { targetCustomerId: filter.viewerId },
+                { isAdmin: true, targetCustomerId: null },
+              ],
+            }
+          : {}),
+        ...(before ? { createdAt: { lt: before } } : {}),
+      },
       orderBy: { createdAt: "desc" }, take: limit,
     }),
   chatBanForCustomer: (customerId: number) => prisma.liveChatBan.findFirst({ where: { customerId } }),

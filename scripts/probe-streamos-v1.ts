@@ -41,6 +41,8 @@ const ok = (m: string) => console.log(`  \x1b[32m✓\x1b[0m ${m}`);
 const bad = (m: string) => console.log(`  \x1b[31m✗\x1b[0m ${m}`);
 const info = (m: string) => console.log(`    ${m}`);
 const head = (m: string) => console.log(`\n\x1b[1m${m}\x1b[0m`);
+/** A documented-vs-live difference we tolerate — reported, but not a failure. */
+const warn = (m: string) => console.log(`  \x1b[33m!\x1b[0m ${m}`);
 
 let failures = 0;
 const fail = (m: string) => {
@@ -103,8 +105,14 @@ const describe = (e: unknown): string =>
       } else {
         info("tags: none on this asset");
       }
-      if (String(a.status).toUpperCase() === "COMPLETED" && !a.hlsManifestUrl) {
-        fail("Asset is COMPLETED but hlsManifestUrl is null — nothing would be playable.");
+      // Probed 2026-09-09: the live API leaves `video.hls_manifest_url` null on
+      // COMPLETED assets and ships the ladder in `renditions[].playlist_url`
+      // instead. That is still playable — just per-quality, with no ABR master —
+      // so it is a warning. Only a COMPLETED asset with NEITHER is a real break.
+      if (String(a.status).toUpperCase() === "COMPLETED" && !a.hlsManifestUrl && a.renditions.length === 0) {
+        fail("Asset is COMPLETED but has no hlsManifestUrl and no renditions — nothing would be playable.");
+      } else if (String(a.status).toUpperCase() === "COMPLETED" && !a.hlsManifestUrl) {
+        warn("hlsManifestUrl is null — playback falls back to the per-quality ladder (no ABR master).");
       }
     } catch (e) {
       fail(`GET /assets/{id}/ failed: ${describe(e)}`);

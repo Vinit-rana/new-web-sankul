@@ -89,6 +89,9 @@ async function request<T = any>(config: AxiosRequestConfig): Promise<AxiosRespon
 
 function mapHttpError(res: AxiosResponse): StreamosError {
   const { status, data } = res;
+  // The upstream body is the ONLY place Streamos says *why* it refused. Callers
+  // log err.upstreamStatus but not the body, so log it once here for all of them.
+  logger.error("Streamos upstream error", { status, url: res.config?.url, body: data });
   if (status === 403) {
     return new StreamosError("Streamos rejected credentials (403).", 502, status, data);
   }

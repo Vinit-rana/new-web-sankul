@@ -1204,8 +1204,9 @@ const handleV1RecordingWebhook = async (req: Request, res: Response, traceId?: s
     logger.warn("StreamOS v1 webhook rejected", { traceId, event, deliveryId, reason: verdict.reason });
     return res.status(401).json({ success: false, message: "Unauthorized." });
   }
-  // Which payload construction matched. The docs don't say; once a real delivery
-  // tells us, pin it in utils/streamosSignature.ts and drop the other branch.
+  // Which payload construction matched. The docs (read 2026-09-09) specify
+  // `{timestamp}.{rawBody}`; once a real delivery confirms "timestamped", drop
+  // the body-only fallback in utils/streamosSignature.ts.
   logger.info("StreamOS v1 webhook verified", { traceId, event, deliveryId, scheme: verdict.scheme });
 
   const body = req.body ?? {};

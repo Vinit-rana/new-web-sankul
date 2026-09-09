@@ -16,8 +16,28 @@ export const getChatHistory = async (req: Request, res: Response) => {
     if (!userId) { logger.warn("getChatHistory unauthorized", { traceId }); return failure(res, "Unauthorized", 401); }
     if (!liveClassId) { logger.warn("getChatHistory missing liveClassId", { traceId, userId }); return failure(res, "liveClassId is required", 400); }
 
-    const messages = await liveSql.getChatHistory(String(liveClassId), limit, before ? new Date(before) : undefined);
-    return success(res, { messages }, "Chat history fetched", 200);
+    // Which listing to return. `?private=true|false` is explicit; omitted follows
+    // whatever mode the host has the class in right now, so a client that just
+    // asks for "the history" never gets the other mode's thread mixed in.
+    const priv = req.query.private;
+    const isPrivate =
+      priv === undefined
+        ? (await liveSql.getChatSettings(String(liveClassId))).privateChat
+        : priv === "true" || priv === "1";
+
+    // A viewer sees their own private messages plus host replies addressed to
+    // them — never another student's thread. The public listing is the same for
+    // everyone, so it carries no viewer scope.
+    const viewerId = isPrivate ? liveSql.parseLiveId(String(userId)) : null;
+    if (isPrivate && viewerId == null) return success(res, { messages: [], privateChat: true }, "Chat history fetched", 200);
+
+    const messages = await liveSql.getChatHistory(
+      String(liveClassId),
+      limit,
+      before ? new Date(before) : undefined,
+      { isPrivate, viewerId }
+    );
+    return success(res, { messages, privateChat: isPrivate }, "Chat history fetched", 200);
   } catch (err) {
     logger.error("getChatHistory failed", { traceId, liveClassId, userId, error: getErrorMessage(err), stack: (err as Error).stack });
     return failure(res, "Something went wrong. Please try again later.", 500);

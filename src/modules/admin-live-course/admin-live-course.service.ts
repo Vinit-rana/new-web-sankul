@@ -1179,10 +1179,29 @@ export const getReminderForSession = async (customerId: number, liveSessionId: n
 // column (ws_live_chat_message only has is_admin + admin_id), so `role` is
 // resolved from the admin's current spatie roles at read time; non-admin
 // (customer) rows get role: null.
-const toChatMessageDto = (m: any, role: string | null = null) => ({ _id: String(m.id), customerId: idStrOrNull(m.customerId), userName: m.userName ?? null, message: m.message ?? null, isAdmin: !!m.isAdmin, role: m.isAdmin ? role : null, createdAt: m.createdAt ?? null });
+const toChatMessageDto = (m: any, role: string | null = null) => ({ _id: String(m.id), customerId: idStrOrNull(m.customerId), userName: m.userName ?? null, message: m.message ?? null, isAdmin: !!m.isAdmin, role: m.isAdmin ? role : null, isPrivate: !!m.isPrivate, targetCustomerId: idStrOrNull(m.targetCustomerId), createdAt: m.createdAt ?? null });
 
-export const getChatHistory = async (liveClassId: string, limit: number, before?: Date) => {
-  const rows = await repo.chatHistory(liveClassId, limit, before);
+/**
+ * One live class's chat listing.
+ *
+ * `scope` selects ONE mode, which is what keeps public and private threads from
+ * rendering as one mixed array:
+ *   - omitted            → every message, both modes (admin history default)
+ *   - { isPrivate:false} → the public timeline
+ *   - { isPrivate:true } → the private thread, narrowed by `viewerId` for a
+ *                          student (own messages, host replies addressed to them,
+ *                          and host messages addressed to nobody) and unnarrowed
+ *                          for the host.
+ *
+ * Always chronological, oldest→newest, so a late joiner can render it as-is.
+ */
+export const getChatHistory = async (
+  liveClassId: string,
+  limit: number,
+  before?: Date,
+  scope?: { isPrivate?: boolean; viewerId?: number | null }
+) => {
+  const rows = await repo.chatHistory(liveClassId, limit, before, scope);
   // Batch-resolve the current role for every distinct admin author on this
   // page (one pivot query, not one per message).
   const adminIds = Array.from(
@@ -1212,20 +1231,27 @@ export const getChatBanStatus = async (customerId: number) => {
  * Mirrors sendAdminChatMessage but writes customerId (not adminId) and
  * isAdmin:false. Returns the Mongo-ish shape the socket emits as `new_message`.
  */
-export const sendCustomerChatMessage = async (input: { liveClassId: string; customerId: number | null; userName?: string | null; message: string }) => {
+export const sendCustomerChatMessage = async (input: { liveClassId: string; customerId: number | null; userName?: string | null; message: string; isPrivate?: boolean }) => {
   const now = new Date();
-  const created = await repo.createChatMessage({ liveClassId: input.liveClassId, customerId: input.customerId, adminId: null, isAdmin: false, userName: input.userName ?? "", message: input.message, createdAt: now, updatedAt: now });
-  return { _id: String(created.id), liveClassId: created.liveClassId, customerId: idStrOrNull(created.customerId), userName: created.userName, message: created.message, createdAt: created.createdAt };
+  // isPrivate is the mode active at SEND time. It is never rewritten when the
+  // host toggles later — that is what lets both histories coexist and be served
+  // one at a time.
+  const created = await repo.createChatMessage({ liveClassId: input.liveClassId, customerId: input.customerId, adminId: null, isAdmin: false, isPrivate: !!input.isPrivate, userName: input.userName ?? "", message: input.message, createdAt: now, updatedAt: now });
+  return { _id: String(created.id), liveClassId: created.liveClassId, customerId: idStrOrNull(created.customerId), userName: created.userName, message: created.message, isPrivate: created.isPrivate, createdAt: created.createdAt };
 };
 
 /** True iff this customer currently has a chat ban (socket send_message guard). */
 export const isCustomerChatBanned = async (customerId: number): Promise<boolean> =>
   !!(await repo.chatBanForCustomer(customerId));
 
-export const sendAdminChatMessage = async (input: { liveClassId: string; adminId: number | null; userName?: string | null; message: string }) => {
+export const sendAdminChatMessage = async (input: { liveClassId: string; adminId: number | null; userName?: string | null; message: string; isPrivate?: boolean; targetCustomerId?: number | null }) => {
   const now = new Date();
-  const created = await repo.createChatMessage({ liveClassId: input.liveClassId, customerId: null, adminId: input.adminId, isAdmin: true, userName: input.userName ?? "Admin", message: input.message, createdAt: now, updatedAt: now });
-  return { _id: String(created.id), liveClassId: created.liveClassId, userName: created.userName, message: created.message, isAdmin: true, createdAt: created.createdAt };
+  // targetCustomerId addresses a private reply to ONE student, so it reaches them
+  // and the admins and nobody else — a reply meant for one student must not land in
+  // another's thread. Left null, a private host message goes to the whole room:
+  // private mode hides students from each other, not the host from the class.
+  const created = await repo.createChatMessage({ liveClassId: input.liveClassId, customerId: null, adminId: input.adminId, isAdmin: true, isPrivate: !!input.isPrivate, targetCustomerId: input.isPrivate ? input.targetCustomerId ?? null : null, userName: input.userName ?? "Admin", message: input.message, createdAt: now, updatedAt: now });
+  return { _id: String(created.id), liveClassId: created.liveClassId, userName: created.userName, message: created.message, isAdmin: true, isPrivate: created.isPrivate, targetCustomerId: idStrOrNull(created.targetCustomerId), createdAt: created.createdAt };
 };
 
 export const deleteChatMessage = async (id: number, deletedBy: number | null): Promise<"not_found" | "already" | { liveClassId: string; deletedAt: Date }> => {

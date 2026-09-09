@@ -101,13 +101,21 @@ export async function provisionStream(input: {
   scheduledAt?: Date | null;
 }): Promise<ProvisionResult> {
   if (providerForNewStreams() === "v1") {
-    // v1 requires an ISO timestamp to schedule; without one there is nothing to
-    // reserve against, so fall back to an immediately-pushable stream.
+    // v1 requires a FUTURE ISO timestamp to schedule — `POST /livestreams/schedule/`
+    // rejects a past one with `400 SCHEDULE_IN_PAST`. Without a usable timestamp
+    // there is nothing to reserve against, so fall back to an immediately-pushable
+    // stream.
+    //
+    // A past scheduledAt is normal, not an error: "Go Live" has no start window, so
+    // an admin may start a class minutes or days after its scheduled slot, and a
+    // session provisioned at go-live time reaches this with its slot already gone.
+    // The 60s margin keeps a timestamp that is about to lapse from failing in flight.
     const scheduledAt = input.scheduledAt ?? null;
-    const stream = scheduledAt
+    const schedulable = scheduledAt !== null && scheduledAt.getTime() > Date.now() + 60_000;
+    const stream = schedulable
       ? await v1.scheduleLiveStream({
           title: input.title,
-          scheduledAt: scheduledAt.toISOString(),
+          scheduledAt: (scheduledAt as Date).toISOString(),
           customTags: sessionTags(input.sessionId),
         })
       : await v1.createLiveStream({

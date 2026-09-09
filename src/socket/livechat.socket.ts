@@ -159,6 +159,126 @@ async function emitPrivateViewerMessage(
   }
 }
 
+/**
+ * Deliver a HOST message sent while chat is private.
+ *
+ * The admin path has no socket of its own (it posts over REST), so this is the
+ * counterpart to emitPrivateViewerMessage. Private mode hides students from each
+ * OTHER; it does not hide the host from the class. So:
+ *
+ *   - addressed (targetCustomerId set) → that student + every admin. A reply meant
+ *     for one student must not appear in another student's thread.
+ *   - unaddressed                      → the whole room, exactly like a public
+ *     message. This is the host talking to the class, and silencing it would leave
+ *     the host unable to say anything while private mode is on.
+ */
+export async function emitPrivateAdminMessage(
+  liveClassId: string,
+  targetCustomerId: string | null,
+  payload: Record<string, any>
+): Promise<void> {
+  if (!io) return;
+  if (!targetCustomerId) {
+    io.to(roomKey(liveClassId)).emit("new_message", payload);
+    return;
+  }
+  try {
+    const sockets = await io.in(roomKey(liveClassId)).fetchSockets();
+    for (const s of sockets) {
+      const isAdmin = (s.data?.isAdmin as boolean | undefined) ?? false;
+      const cid = s.data?.customerId as string | undefined;
+      if (isAdmin || cid === targetCustomerId) s.emit("new_message", payload);
+    }
+  } catch (err) {
+    logger.warn("private-chat admin message fan-out failed", { liveClassId, err: (err as Error).message });
+  }
+}
+
+// Chat history is served as ONE mode at a time. Public and private messages both
+// live in ws_live_chat_message, told apart by is_private, and neither is deleted
+// when the host toggles — so a toggle replaces what a client renders, it never
+// discards what is stored.
+//
+// A joiner gets the FULL thread for the current mode, not a page of it: a student
+// who joins mid-class must see the same public timeline as someone who was there
+// from the start.
+// ponytail: flat cap, no pagination. A class that ever exceeds this needs a
+// windowed `before` fetch on the socket path like the REST endpoint already has.
+const MAX_CHAT_HISTORY = 1000;
+
+/**
+ * The listing one socket may see right now.
+ *
+ * Public mode  → the whole public timeline, identical for everyone.
+ * Private mode → admins get the entire private thread (moderation); a viewer gets
+ *                their own messages, host replies addressed to them, and host
+ *                messages addressed to nobody.
+ *
+ * A viewer whose id will not parse gets an EMPTY list, never the unscoped thread —
+ * failing closed here is what stops one student reading another's private chat.
+ */
+async function historyForViewer(
+  liveClassId: string,
+  privateChat: boolean,
+  isAdmin: boolean,
+  customerId: string | undefined
+) {
+  if (!privateChat) {
+    return liveCourseSql.getChatHistory(liveClassId, MAX_CHAT_HISTORY, undefined, { isPrivate: false });
+  }
+  if (isAdmin) {
+    return liveCourseSql.getChatHistory(liveClassId, MAX_CHAT_HISTORY, undefined, { isPrivate: true });
+  }
+  const viewerId = liveCourseSql.parseLiveId(String(customerId));
+  if (viewerId == null) return [];
+  return liveCourseSql.getChatHistory(liveClassId, MAX_CHAT_HISTORY, undefined, { isPrivate: true, viewerId });
+}
+
+/**
+ * Push a fresh, mode-scoped `chat_history` to everyone in the room.
+ *
+ * Called by the admin settings endpoint right after `chat_settings`, so a toggle
+ * REPLACES the visible listing instead of appending the new mode onto the old
+ * one. Clients treat this payload as a full replace.
+ *
+ * Public mode costs one query and one room-wide emit. Private mode also costs one
+ * query — the host's full thread — which is then filtered per socket in memory,
+ * rather than one query per connected student.
+ */
+export async function broadcastChatHistoryForMode(
+  liveClassId: string,
+  privateChat: boolean
+): Promise<void> {
+  if (!io) return;
+  try {
+    if (!privateChat) {
+      const messages = await liveCourseSql.getChatHistory(liveClassId, MAX_CHAT_HISTORY, undefined, { isPrivate: false });
+      io.to(roomKey(liveClassId)).emit("chat_history", { liveClassId, privateChat: false, messages });
+      return;
+    }
+
+    const all = await liveCourseSql.getChatHistory(liveClassId, MAX_CHAT_HISTORY, undefined, { isPrivate: true });
+    const sockets = await io.in(roomKey(liveClassId)).fetchSockets();
+    for (const sock of sockets) {
+      const isAdmin = (sock.data?.isAdmin as boolean | undefined) ?? false;
+      const cid = sock.data?.customerId as string | undefined;
+      // Same three-way rule as the query in chatHistory: own messages, replies
+      // addressed to me, and host messages addressed to nobody.
+      const messages = isAdmin
+        ? all
+        : all.filter(
+            (m: any) =>
+              m.customerId === cid ||
+              m.targetCustomerId === cid ||
+              (m.isAdmin && m.targetCustomerId === null)
+          );
+      sock.emit("chat_history", { liveClassId, privateChat: true, messages });
+    }
+  } catch (err) {
+    logger.error("chat_history mode broadcast failed", { liveClassId, privateChat, error: (err as Error).message });
+  }
+}
+
 // Open an attendance row for this socket's stint in a live class. Best-effort.
 async function openAttendance(socket: AuthenticatedSocket, liveClassId: string) {
   try {
@@ -352,10 +472,14 @@ export function initLiveChatSocket(httpServer: HttpServer, allowedOrigins: strin
       }
 
       try {
-        // getChatHistory returns chrono order (oldest→newest); limit 50.
-        const history = await liveCourseSql.getChatHistory(liveClassId, 50);
-        socket.emit("chat_history", { liveClassId, messages: history });
-        logger.info("Live chat: user joined", { room: roomKey(liveClassId), customerId: socket.customerId });
+        // Late join / reconnect gets the COMPLETE thread for whatever mode is
+        // active, chronological. Reusing `settings` from the emit above keeps the
+        // settings a client just received and the listing it is about to render in
+        // the same mode.
+        const mode = await liveCourseSql.getChatSettings(liveClassId);
+        const history = await historyForViewer(liveClassId, mode.privateChat, !!socket.isAdmin, socket.customerId);
+        socket.emit("chat_history", { liveClassId, privateChat: mode.privateChat, messages: history });
+        logger.info("Live chat: user joined", { room: roomKey(liveClassId), customerId: socket.customerId, privateChat: mode.privateChat, messages: history.length });
       } catch (err) {
         logger.error("Live chat: history load failed", { liveClassId, error: (err as Error).message });
       }
@@ -470,6 +594,9 @@ export function initLiveChatSocket(httpServer: HttpServer, allowedOrigins: strin
           customerId: banCustId,
           userName: socket.userName!,
           message: text,
+          // Stored, not just used for fan-out — this is what lets the private
+          // thread be replayed after a toggle or a reconnect.
+          isPrivate: chatSettings.privateChat,
         });
         const messagePayload = {
           _id: saved._id,
@@ -482,6 +609,10 @@ export function initLiveChatSocket(httpServer: HttpServer, allowedOrigins: strin
           isAdmin: false,
           role: null,
           message: text,
+          // Carried on the event so a client holding both lists can route it,
+          // and can drop a cross-mode event outright.
+          isPrivate: chatSettings.privateChat,
+          targetCustomerId: null,
           createdAt: saved.createdAt,
         };
         if (chatSettings.privateChat) {

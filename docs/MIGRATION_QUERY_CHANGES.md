@@ -15,6 +15,343 @@
 
 ---
 
+## 2026-09-09 (vi) — live chat: separate public and private listings
+
+> **DDL REQUIRED:** `docs/migration/schema-changes/2026-09-09_live_chat_private_separation.sql`
+> — 2 additive columns + 1 index on `ws_live_chat_message`. **APPLY BEFORE THE CODE.**
+> Applied on the local dev DB; **PENDING on staging and production.**
+> Response shapes change additively (two new fields). Requirement doc:
+> `BE_LIVE_CHAT_PUBLIC_PRIVATE_SEPARATION.md`. Frontend contract:
+> `docs/client/LIVE_CHAT_PRIVATE_SEPARATION.md`.
+
+### Problem
+
+Live class chat has two host-controlled modes: public (everyone sees a message) and
+private (host + sender only). The mode lived **only** in
+`ws_live_chat_setting.private_chat` and was read at send time to pick the socket
+fan-out. It was never stored on the message.
+
+So history could not be filtered after the fact. A reload returned every row
+regardless of the mode it was sent under, and toggling public → private appended
+private messages onto the public timeline in the client's single `messages` array.
+
+### Schema
+
+```sql
+ALTER TABLE `ws_live_chat_message`
+  ADD COLUMN `is_private`         TINYINT(1) NOT NULL DEFAULT 0 AFTER `is_admin`,
+  ADD COLUMN `target_customer_id` INT        NULL     AFTER `is_private`;
+
+CREATE INDEX `idx_lcm_class_private`
+  ON `ws_live_chat_message` (`live_class_id`, `is_private`, `created_at`);
+```
+
+- `is_private` — the mode active at send time, stamped once, **never** rewritten on a
+  later toggle. Every pre-existing row is public chat, which `DEFAULT 0` already
+  gives, so **no backfill is needed**.
+- `target_customer_id` — which student a private host reply is addressed to. See
+  "Deviation" below.
+- The table previously had only `idx_lcm_class` (`live_class_id` alone), so every
+  mode-filtered read would have scanned the whole class and sorted.
+
+### Query changes
+
+`repo.chatHistory()` gained an optional `filter` argument:
+
+```ts
+...(filter?.isPrivate !== undefined ? { isPrivate: filter.isPrivate } : {}),
+...(filter?.viewerId != null
+  ? { OR: [{ customerId: filter.viewerId }, { targetCustomerId: filter.viewerId }] }
+  : {}),
+```
+
+Omitting `filter` preserves the old unfiltered behavior exactly, which is what the
+admin moderation history still wants. The viewer scope is pushed into the `WHERE`
+rather than filtered in memory so `take: limit` still means what it says.
+
+`service.getChatHistory()` gained the matching optional `scope` parameter. Both
+new arguments are optional, so no existing caller changed behavior implicitly.
+
+### Response shape
+
+`toChatMessageDto` gained **two additive fields**: `isPrivate: boolean` and
+`targetCustomerId: string | null`. No existing field was renamed, removed or
+retyped. Both are also present on `new_message` socket payloads and on the
+create-path returns of `sendCustomerChatMessage` / `sendAdminChatMessage`.
+
+### Behavior
+
+- **Send** (socket `send_message` and admin `POST /live-chat/message`) stamps the
+  current mode onto the row.
+- **Join** (`join_live_chat`) emits `chat_settings`, then the **full** history for
+  the current mode — public gets the whole timeline from class start (late joiners
+  see everything), private gets the viewer-scoped thread.
+- **Toggle** (`PATCH /live-chat/:liveClassId/settings`) emits `chat_settings` and
+  then `broadcastChatHistoryForMode()`, which pushes a fresh mode-scoped
+  `chat_history` to every socket in the room. Public costs one query and one
+  room-wide emit; private costs one query (the host's full thread) filtered per
+  socket in memory, not one query per connected student. Fired best-effort so a
+  failed push cannot fail the settings write that already committed.
+- **Private delivery** is unchanged for students (admins + sender) and new for the
+  host: `emitPrivateAdminMessage()` reaches admins plus the addressed student only.
+
+### Deviation from the requirement doc — `target_customer_id`
+
+The doc asks that a student see "their own private messages (+ host replies if those
+are stored as private)", and its example payload shows a host reply inside a
+student's private view. Nothing in the original model recorded **which** student a
+host reply belonged to, leaving only two options: hide host replies from students
+entirely, or show every host reply to every student. The second leaks one student's
+private conversation to the whole class. One nullable column avoids both.
+
+**Private mode hides students from each other; it does not hide the host from the
+class.** So the column is read as: set → that student and the admins only; NULL on an
+admin row → the host talking to the whole class, delivered to everyone, exactly like
+a public message. A viewer's private listing is therefore three things, not one:
+
+```ts
+OR: [
+  { customerId: viewerId },                  // own messages
+  { targetCustomerId: viewerId },            // replies addressed to me
+  { isAdmin: true, targetCustomerId: null }, // host talking to the class
+]
+```
+
+The same three-way rule is applied in memory in
+`broadcastChatHistoryForMode()` and in `emitPrivateAdminMessage()`, which sends an
+unaddressed host message to the whole room and an addressed one to that student plus
+the admins.
+
+### Verification
+
+`scripts/test-live-chat-private-scope.ts` — asserts the public listing contains no
+private rows, the host sees the whole private thread, student A sees their own plus
+the reply addressed to them plus the host's announcement, and student B sees their
+own plus the announcement but **neither A's message nor the reply addressed to A**.
+Writes under a throwaway `liveClassId` and deletes it in `finally`.
+
+```
+npx tsx scripts/test-live-chat-private-scope.ts
+OK  public/private listings stay separate and viewer-scoped.
+```
+
+`yarn typecheck` passes.
+
+---
+
+## 2026-09-09 (v) — script to register the StreamOS v1 webhook and capture its signing secret
+
+> **No DDL. No query changes. No index changes. No response-contract changes.**
+> New script only: `scripts/register-streamos-v1-webhook.ts`.
+
+`STREAMOS_WEBHOOK_SIGNING_SECRET` has no dashboard page and cannot be requested from
+the account owner. StreamOS mints it inside the response to `POST /webhooks/`, once,
+and it is never readable again.
+
+Until it is set, `verifyStreamosSignature` rejects every delivery with 401, StreamOS
+retries 6 times over ~13h and gives up, and **recordings never attach to their
+sessions** — silently, because live classes keep working.
+
+The script wraps the existing `registerWebhook()` / `listWebhooks()` client calls:
+
+```bash
+STREAMOS_API_KEY=sk_live_… \
+WEBHOOK_BASE_URL=https://api.example.com \
+npx tsx scripts/register-streamos-v1-webhook.ts
+```
+
+It registers `POST /api/v1/client/webhook/recording` (the path fixed by
+`src/client/webhook/webhook.routes.ts:11` — the same public endpoint the legacy
+callback uses; v1 deliveries are told apart by their headers) for the three events
+`applyEvent` actually handles: `LIVESTREAM_ENDED`, `LIVESTREAM_RECORDING_READY`,
+`VIDEO_TRANSCODING_COMPLETED`.
+
+It lists existing registrations first and refuses to duplicate one for the same URL
+(`FORCE=1` overrides), rejects a non-https base URL, and fails loudly if the response
+carries no `signing_secret` rather than leaving a registered-but-unverifiable webhook
+in place.
+
+**Must run from staging or production** — StreamOS has to reach the URL, so localhost
+cannot be registered.
+
+---
+
+## 2026-09-09 (iv) — fix `400 SCHEDULE_IN_PAST` when provisioning a v1 stream
+
+> **No DDL. No query changes. No index changes. No response-contract changes.**
+
+`POST /api/v1/admin/live-sessions/23/provision` returned
+`502 "StreamOS error (400) [SCHEDULE_IN_PAST]"`.
+
+### Cause
+
+`provisionStream()` in `src/admin/live/streamos.provider.ts` branched on
+`scheduledAt` being merely **present**, sending any non-null value to
+`POST /livestreams/schedule/`. That endpoint requires the timestamp to be
+**future-dated** and rejects a past one with `400 SCHEDULE_IN_PAST`.
+
+Session 23 is scheduled for 09 Sept 2026 11:10 and was provisioned after that
+moment, so the request was guaranteed to fail.
+
+**A past `scheduledAt` is normal, not an error.** The 2-minute start window was
+removed from `startScheduledLiveSession` earlier, so "Go Live" works at any time —
+an admin can start a class well after its scheduled slot, and a session provisioned
+at go-live time always arrives here with its slot already gone. Under the legacy
+provider this was invisible: `createStream` never took a timestamp at all.
+
+### Fix
+
+Branch on whether the timestamp is still **usable**, not whether it exists:
+
+```ts
+const schedulable = scheduledAt !== null && scheduledAt.getTime() > Date.now() + 60_000;
+```
+
+A past or imminent slot now falls through to `v1.createLiveStream()` — an
+immediately-pushable stream — which is the same fallback already used when
+`scheduledAt` is null. The 60s margin stops a timestamp that lapses mid-request
+from failing in flight.
+
+Fixed in the shared `provisionStream()`, so both callers are covered:
+`provisionLiveSession` (the `/provision` route that produced this error) and
+`startScheduledLiveSession` (`/start`). Legacy is untouched — it has no schedule call.
+
+Verified with `yarn typecheck`.
+
+---
+
+## 2026-09-09 (iii) — first live probe of the StreamOS v1 API: rendition parsing was broken
+
+> **No DDL. No query changes. No index changes.** One parser fix in `src/`, one probe
+> assertion relaxed. Response contracts unchanged.
+
+The `sk_live_…` key arrived, so `scripts/probe-streamos-v1.ts` was run against the real
+API for the first time (read-only; nothing created, no stream slot consumed).
+
+### Result
+
+Authentication, the response envelope, `GET /assets/`, `GET /assets/{id}/` and
+`GET /livestreams/` all behave as documented. The organization already holds 60 assets.
+Two places where the **live API differs from the published docs**:
+
+**1. `renditions[].playlist_url`, not `renditions[].url` — real bug, fixed.**
+
+`toAsset()` in `src/admin/live/streamos.v1.service.ts` read `r.url`, which is the field
+name the docs use. The live API returns `playlist_url` (plus `ios_playlist_url`,
+`dash_url`, `size_bytes`, `download_url`). Every rendition therefore failed the
+`.filter(r => r.url || r.dashUrl)` guard and was dropped.
+
+Effect before the fix: a COMPLETED recording produced `renditions: []`, so
+`rendsToRecordings()` in `streamos.provider.ts` returned an empty ladder and
+`getDetails()` reported **no recordings at all** for a finished v1 class. Silent — no
+error anywhere, the recording simply never appeared.
+
+Fixed at `toAsset()` — the single point every asset read routes through (`getAsset`,
+`listAssets`, `registerVideo`) — as `r?.playlist_url || r?.url || null`. Probe now
+reports `renditions: 4 (240p, 360p, 480p, 720p)`.
+
+**2. `video.hls_manifest_url` is null on COMPLETED assets — tolerated, not fixed.**
+
+The docs call the master manifest *"the whole thing"*, but the live API leaves it null
+while still publishing a full per-quality ladder. Not a DRM asset (`drm_content_id` and
+`dash_manifest_url` are both null), so this is not the documented DRM exception.
+
+Consequence: `getDetails()` builds `recordings` with no `quality: "auto"` entry at the
+head, so any caller taking `recordings[0]` gets **240p instead of an ABR master**. The
+content is playable, so this is not a break — but ABR is lost until StreamOS populates
+the field. The probe now reports it as a warning rather than a failure.
+
+Also observed, vendor-side, not actionable by us: the **720p rendition's
+`playlist_url` points at the 480p path**. Worth raising with StreamOS.
+
+### Verification
+
+`npx tsx scripts/probe-streamos-v1.ts` → *"No mismatches found."* `yarn typecheck` passes.
+The create/end write path is still unproven — it needs `PROBE_WRITE=1`, which consumes a
+live stream slot from the shared org pool and must not run during class hours.
+
+---
+
+## 2026-09-09 (ii) — StreamOS v1 docs re-read: comments corrected, no behaviour change
+
+> **No DDL. No query changes. No index changes. No response-contract changes.**
+> Comment-only edits in `src/`, logged because the protocol checks `src/` mtime.
+
+Read `https://streamos.in/docs` in full and reconciled it against the existing v1
+implementation. **Nothing in the client, facade, webhook handler or signature verifier
+contradicts the published contract** — no code behaviour was changed.
+
+Two stale comments corrected:
+
+- `src/utils/streamosSignature.ts` — the "⚠ UNCONFIRMED" note about which payload is
+  signed. The docs now state it explicitly: HMAC-SHA256 over `{timestamp}.{rawBody}`.
+  The body-only fallback branch is **kept** until a production delivery logs
+  `scheme: "timestamped"`; then it can be deleted.
+- `src/admin/live/live.controller.ts` (v1 webhook handler) — the matching
+  "the docs don't say" note.
+
+Full findings, including which of the eight open questions the docs answer and the
+newly discovered `TRANSCODE_NOT_CONFIGURED` (409) pre-flight, are recorded in
+`docs/migration/STREAMOS_V1_QUESTIONS.md` under **VERDICT 2026-09-09**.
+
+Operational state unchanged: DDL `2026-09-01_streamos_v1_live_session.sql` verified
+applied on the local dev DB (all four `ws_live_session` columns + `ws_streamos_webhook_delivery`);
+**staging and production remain unverified** and must be confirmed before
+`STREAMOS_PROVIDER=v1` is set anywhere (code-ahead-of-DB = MySQL 1054 on every
+live-session read, per the 2026-08-26 live-course incident).
+
+---
+
+## 2026-09-09 — log the StreamOS upstream error body (diagnostics only)
+
+> **No DDL. No query changes. No index changes. No response-contract changes.**
+> Logged here only because it touches `src/`; it is a logging line, nothing else.
+
+### Why
+
+Admin `POST /api/v1/admin/live-sessions/:id/start` on session 23 returned
+`502 { "Streamos error (400)." }`. Traced end to end:
+
+`live.controller.ts:startScheduledLiveSession` → `streamos.provider.ts:provisionStream`
+→ legacy `streamos.service.ts:createStream` → `POST https://streamapi.streamos.co/streamos/createStream`.
+
+StreamOS answered **HTTP 400**. `mapHttpError()` maps any unhandled upstream status to
+our own **502** with the message `Streamos error (<their status>)`, which is why the
+browser shows a 502 carrying a 400. The 400 is the vendor's; the 502 is ours.
+
+Confirmed in `logs/app-2026-09-09.log` (traceIds `736ce840…`, `aab5b201…`,
+`upstreamStatus: 400`). The request never reached MySQL — no query is involved.
+
+**Root cause is not determinable from our logs**: all six `StreamosError` catch sites
+log `err.upstreamStatus` but never `err.upstreamBody`, and the body is the only place
+StreamOS says *why*. Most likely candidates are (a) the legacy `STREAMOS_ACCESS_KEY` /
+`STREAMOS_ACCESS_SECRET` no longer being valid after the org moved to the new
+`api.streamos.in` platform (see `docs/migration/STREAMOS_V1_CHANGE_MATRIX.md`), or
+(b) a vendor-side rejection. Owned by whoever holds the StreamOS account, not by the
+frontend.
+
+### Change
+
+`src/admin/live/streamos.service.ts` — one line in `mapHttpError()`:
+
+```ts
+logger.error("Streamos upstream error", { status, url: res.config?.url, body: data });
+```
+
+Placed in the shared mapper rather than in each controller so all six call sites
+(`admin/live/live.controller.ts` ×5, `client/live/live.controller.ts` ×1) get it from
+one edit. Logs the **response** body only — the request body carries the access
+key/secret and is deliberately not logged.
+
+### Follow-up (not done here)
+
+Restart the API, retry Go Live, read the `Streamos upstream error` line. If the body
+reports bad credentials, either refresh the legacy pair or flip to the already-written
+v1 client (`STREAMOS_PROVIDER=v1` + `STREAMOS_API_KEY=sk_live_…`). No code change was
+made to the retry policy or to the status mapping.
+
+---
+
 ## 2026-09-08 (i) — repo-wide dead-scaffolding removal: the `isMysqlModule` flag layer is gone
 
 > **No DDL. No query changes. No index changes. No response-contract changes.**

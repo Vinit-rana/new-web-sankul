@@ -5,11 +5,13 @@
 // Header format:  t=<unix-seconds>,v1=<hex hmac-sha256>
 // The HMAC is computed with the `signing_secret` returned once by POST /webhooks/.
 //
-// ⚠ UNCONFIRMED: the docs say "Timestamp and HMAC-SHA256 of the raw body" but do
-// not state whether the signed payload is the raw body alone or the Stripe-style
-// `<t>.<raw body>`. Both are accepted below and the matched scheme is logged, so
-// the first real delivery tells us which it is; pin it then and delete the other.
-// Accepting both is not a weakening — neither can be forged without the secret.
+// CONFIRMED 2026-09-09 from https://streamos.in/docs/webhooks: the signed payload
+// is the Stripe-style `{timestamp}.{rawBody}` — "compute an HMAC-SHA256 digest
+// using your signing secret and the raw request body in format {timestamp}.{rawBody}".
+// The body-only branch is kept as a fallback until a real delivery has verified
+// against "timestamped" in production (the matched scheme is logged on every
+// delivery). Accepting both is not a weakening — neither can be forged without
+// the secret. Drop the fallback once the logs show "timestamped".
 
 import crypto from "crypto";
 

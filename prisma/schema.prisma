@@ -2144,6 +2144,14 @@ model LiveChatMessage {
   customerId  Int?      @map("customer_id")
   adminId     Int?      @map("admin_id")
   isAdmin     Boolean   @default(false) @map("is_admin")
+  /// The chat mode active when this message was sent. Stamped once and never
+  /// rewritten on a later toggle, so a message keeps the visibility it was sent
+  /// under. Every pre-2026-09-09 row is public, which the DEFAULT 0 already gives.
+  isPrivate   Boolean   @default(false) @map("is_private")
+  /// Which customer a PRIVATE admin reply is addressed to — it reaches that
+  /// student and the admins only. NULL on an admin row means the host is talking
+  /// to the whole class, delivered to everyone. Meaningless on a public row.
+  targetCustomerId Int? @map("target_customer_id")
   userName    String?   @map("user_name")
   message     String?
   deletedAt   DateTime? @map("deleted_at")
@@ -2151,6 +2159,7 @@ model LiveChatMessage {
   createdAt   DateTime? @map("created_at")
   updatedAt   DateTime? @map("updated_at")
 
+  @@index([liveClassId, isPrivate, createdAt], map: "idx_lcm_class_private")
   @@map("ws_live_chat_message")
 }
 

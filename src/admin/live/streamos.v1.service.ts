@@ -363,7 +363,10 @@ const toAsset = (p: any): AssetV1 => {
   const rends: AssetRendition[] = rawRends
     .map((r: any) => ({
       quality: normalizeQualityLabel(r?.quality),
-      url: r?.url || null,
+      // Live API (probed 2026-09-09) returns `playlist_url`, not `url` — the
+      // docs' field name. Reading only `url` dropped every rendition on the
+      // filter below, leaving COMPLETED recordings with nothing playable.
+      url: r?.playlist_url || r?.url || null,
       dashUrl: r?.dash_url || null,
     }))
     .filter((r: AssetRendition) => r.url || r.dashUrl);

@@ -1,5 +1,12 @@
 import { Request, Response } from "express";
-import { io, roomKey, disconnectChatSocketsForCustomer, emitChatUnbannedForCustomer } from "../../socket/livechat.socket";
+import {
+  io,
+  roomKey,
+  disconnectChatSocketsForCustomer,
+  emitChatUnbannedForCustomer,
+  emitPrivateAdminMessage,
+  broadcastChatHistoryForMode,
+} from "../../socket/livechat.socket";
 import { resolveLiveClassId } from "../live/live.guards";
 import { success, failure, getErrorMessage } from "../../utils/httpResponse";
 import logger from "../../utils/logger";
@@ -37,12 +44,25 @@ export const sendAdminMessage = async (req: Request, res: Response) => {
     }
     const adminName = dbName || "Super Admin";
 
-    const saved = await liveSql.sendAdminChatMessage({ liveClassId, adminId: liveSql.parseLiveId(String(admin.id)), userName: adminName, message: text });
+    // The host's message is stored under the mode active right now, exactly like a
+    // viewer's, so it replays in the correct listing after a toggle or a reload.
+    const settings = await liveSql.getChatSettings(liveClassId);
+    // Optional. Addresses a private reply to ONE student, so it reaches them and
+    // the admins only — a reply for one student must not land in another's thread.
+    // Omitted, a private host message goes to the whole room like a public one.
+    // Ignored while chat is public.
+    const targetCustomerId = settings.privateChat ? liveSql.parseLiveId(String(req.body?.targetCustomerId ?? "")) : null;
+
+    const saved = await liveSql.sendAdminChatMessage({ liveClassId, adminId: liveSql.parseLiveId(String(admin.id)), userName: adminName, message: text, isPrivate: settings.privateChat, targetCustomerId });
     // `role` lets the FE reliably detect a super admin (vs admin/editor) and
     // style the message accordingly — see getChatHistory for the reload path.
-    const payload = { _id: saved._id, liveClassId, adminId: admin.id, isAdmin: true, role: admin?.role ?? "admin", userName: adminName, message: text, createdAt: saved.createdAt };
+    const payload = { _id: saved._id, liveClassId, adminId: admin.id, isAdmin: true, role: admin?.role ?? "admin", userName: adminName, message: text, isPrivate: settings.privateChat, targetCustomerId: targetCustomerId != null ? String(targetCustomerId) : null, createdAt: saved.createdAt };
 
-    io?.to(roomKey(liveClassId)).emit("new_message", payload);
+    if (settings.privateChat) {
+      await emitPrivateAdminMessage(liveClassId, payload.targetCustomerId, payload);
+    } else {
+      io?.to(roomKey(liveClassId)).emit("new_message", payload);
+    }
 
     logger.info("sendAdminMessage success", { traceId, liveClassId, adminId: admin.id, messageId: payload._id });
     return success(res, { message: payload }, "Message sent.", 201);
@@ -98,6 +118,14 @@ export const updateChatSettings = async (req: Request, res: Response) => {
     const settings = await liveSql.updateChatSettings(liveClassId, patch);
     // Broadcast so the admin panel + every viewer in the room hydrate live.
     io?.to(roomKey(liveClassId)).emit("chat_settings", settings);
+    // Then replace what they render. Without this the client keeps appending the
+    // new mode's messages onto the previous mode's list and the thread reads as a
+    // mix of both. Each socket gets the FULL saved history for the new mode,
+    // scoped to what that socket may see. Best-effort — a failed history push must
+    // not fail the settings write that already committed.
+    void broadcastChatHistoryForMode(liveClassId, settings.privateChat).catch((e) =>
+      logger.error("updateChatSettings history broadcast failed", { traceId, liveClassId, error: getErrorMessage(e) })
+    );
 
     logger.info("updateChatSettings success", { traceId, liveClassId, settings });
     return success(res, { settings }, "Chat settings updated.");
@@ -117,8 +145,14 @@ export const getChatHistory = async (req: Request, res: Response) => {
     const limit  = Math.min(100, parseInt(req.query.limit as string) || 50);
     const before = req.query.before ? new Date(req.query.before as string) : undefined;
 
+    // `?private=true|false` narrows the listing to one mode. Omitted returns both,
+    // which is what the moderation view wants. No viewer scope: an admin sees the
+    // whole private thread, not one student's slice of it.
+    const priv = req.query.private;
+    const scope = priv === undefined ? undefined : { isPrivate: priv === "true" || priv === "1" };
+
     // NOTE: includeDeleted not supported on SQL (history excludes soft-deleted).
-    const messages = await liveSql.getChatHistory(String(liveClassId), limit, before && !isNaN(before.getTime()) ? before : undefined);
+    const messages = await liveSql.getChatHistory(String(liveClassId), limit, before && !isNaN(before.getTime()) ? before : undefined, scope);
     return success(res, { messages, total: messages.length }, "Chat history fetched.");
   } catch (err) {
     logger.error("getChatHistory failed", { traceId, liveClassId, error: getErrorMessage(err), stack: (err as Error).stack });
