@@ -15,6 +15,118 @@
 
 ---
 
+## 2026-09-10 (iv) — client promocode list: 0% link falls back to the row column (matches checkout)
+
+> **NO DDL.** Query-logic only; response shape unchanged. Check script:
+> `npx tsx scripts/check-promo-effective-discount.ts <promocodeId> <type> <entityId>`.
+
+### Problem
+
+`GET /client/promocodes?type=testSeries&id=1` reported `discountValue: 0` for a code
+whose links matched the entity at `customer_percentage = 0`. `resolvePromoForPlanSql`
+(checkout) falls back to `ws_promocode.discount_type/discount_value` in that case, so
+the list and checkout disagreed.
+
+### Fix (`modules/promo-code/promo-code.service.ts resolveEffectiveDiscounts`)
+
+- Link matched in scope with pct > 0 → that pct (unchanged).
+- Link matched in scope at 0% → entry left unset → `toPublicPromoDto` uses the row's
+  own column (same rule as checkout).
+- Linked but nothing in scope → 0 (unchanged; checkout rejects every plan there).
+- `resolveEffectiveDiscounts` now exported for the check script.
+
+Not covered by this change: a code whose test-series link was stored under the wrong
+`plan_kind` (or dropped) by the pre-(iii) first-match collision. Those rows need a
+re-save from admin after (iii) deploys.
+
+---
+
+## 2026-09-10 (iii) — promocode plan links: `planKind` required; delete/prune keyed on (planId, planKind)
+
+> **NO DDL.** Request contract tightened (admin only); response unchanged. Admin doc:
+> `docs/admin/PROMOCODE_PLAN_KIND_REQUIRED.md`.
+
+### Problem
+
+Live-course plan 1 and test-series price 1 share an id. `PUT /admin/promocodes/:id` with
+both in `plans[]` first-matched both to the live plan (`pickPlanCandidate` fallback), the
+second upsert overwrote the first, and the test-series link was never written. The
+replace-delete (`planId NOT IN keepIds`) and `prunePlanLinksSql` also keyed on planId
+alone, so dropping one kind while keeping the other left the stale row.
+
+### Fix (`modules/promo-code/promo-code.service.ts`, `admin/promocode/promocode.validation.ts`)
+
+- `planLinkSchema.planKind` required (`price | livePlan | testSeriesPrice`); missing → 400
+  Zod issues.
+- `pickPlanCandidate`: exact kind match or `badRequest` → 400
+  `plans[]: planId N is not a <kind> plan of the selected entities (found: …)`. First-match
+  fallback + warn log removed.
+- `syncPlanLinksSql` replace-delete and `prunePlanLinksSql` now
+  `deleteMany({ promocodeId, NOT: [{planId, planKind}, …] })` — pair-keyed.
+  `prunePlanLinksSql` takes the `ValidPlanMap` (all candidates, all kinds) instead of ids.
+- Orphan planIds (not resolvable from appliesTo at all) still silently dropped — unchanged.
+
+---
+
+## 2026-09-10 (ii) — `daysLeft`: IST calendar days + per-user cache capped at IST midnight
+
+> **NO DDL.** Value-only change (±1 on some days); shape untouched. Frontend note:
+> `docs/client/DAYS_LEFT_SEMANTICS.md`.
+
+### Problem
+
+`/client/test-series` (list) and `/client/test-series/:id` (detail) showed `daysLeft`
+differing by 1. Both are `cacheRoute(TS)` (24h, per-user). `daysLeft` was
+`ceil((endAt−now)/1d)` at request time → stepped at endAt's clock time, so two cache
+fills minutes apart on either side of that instant disagreed for up to 24h. Nine copies
+of the formula existed (`computeDaysLeft` + 8 local `daysBetween`/`daysLeftOf`).
+
+### Fix
+
+- `utils/planDuration.ts computeDaysLeft`: `istDayIndex(endAt) − istDayIndex(now)`,
+  `max(1)` while active, `0` expired, `null` lifetime. New `istDayIndex` /
+  `secondsToIstMidnight` in `utils/istJson.ts`.
+- All 8 local copies now delegate to `computeDaysLeft` (exam-countdown.client,
+  commerce-ebook-sub, catalog-ebook, client-free, client-trending, offline-video-download,
+  client-lecture-progress, test-series-order).
+- `middlewares/cacheRoute.ts`: `CacheScope.User` entries get
+  `EX = min(jitter(ttl), secondsToIstMidnight())`. Shared entries unchanged.
+- Not touched: dashboard exam-countdown `daysLeftFor` (exam DATE, UTC-day anchored,
+  different domain).
+
+### Cost
+
+One extra cache miss per user-scoped key per day (the midnight expiry). No query change.
+
+---
+
+## 2026-09-10 — client terms: embed module helpline contacts from ws_department_contact
+
+> **NO DDL.** Additive response field only. Frontend contract:
+> `docs/client/TERMS_HELPLINE_CONTACTS.md`.
+
+### What changed
+
+`GET /client/terms[?module=]` now returns `contacts: DepartmentContactDto[]` on every
+terms object — the active contacts of the department mapped to that module
+(`TERMS_HELPLINE_DEPARTMENT` in `modules/terms/terms.service.ts`: `book` → department
+id 3 "Publication Helpline Number"; `referral code` unmapped → `[]`).
+
+### Query
+
+One extra read per terms row on the client path only:
+`departmentRepository.findById(3)` (`ws_department` + `ws_department_contact`, ordered
+`order ASC, id ASC`), filtered in the service to `department.active && contact.active`.
+Admin terms CRUD is untouched — `TermsDto` unchanged; the client uses `ClientTermsDto`.
+
+### Cache
+
+`FLUSH_GROUPS[ContactDepartment]` gained `Terms`: an admin department write now sweeps
+`/client/terms` (and, via the Terms group, CMS + catalog-book — same sweep an admin
+terms edit already triggers).
+
+---
+
 ## 2026-09-09 (vi) — live chat: separate public and private listings
 
 > **DDL REQUIRED:** `docs/migration/schema-changes/2026-09-09_live_chat_private_separation.sql`

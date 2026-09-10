@@ -35,7 +35,7 @@ import logger from "../utils/logger";
 import { cacheHitsTotal, cacheMissesTotal } from "../utils/metrics";
 import { incrementContext } from "../utils/requestContext";
 import { refreshMediaTokensInPlace } from "../utils/mediaToken";
-import { istJsonReplacer } from "../utils/istJson";
+import { istJsonReplacer, secondsToIstMidnight } from "../utils/istJson";
 import crypto from "crypto";
 
 const deflate = promisify(zlib.deflate);
@@ -307,7 +307,9 @@ export const cacheRoute = (opts: number | CacheRouteOptions) => {
         // `...+05:30` — same field, different format depending on luck.
         deflate(Buffer.from(JSON.stringify({ status: res.statusCode, body }, istJsonReplacer), "utf8"))
           .then((compressed) =>
-            redisClient.set(key, compressed.toString("base64"), "EX", jitter(ttl))
+            // Per-user bodies carry day-granular fields (daysLeft) — never let
+            // one outlive the IST day it was computed on.
+            redisClient.set(key, compressed.toString("base64"), "EX", scope === CacheScope.User ? Math.min(jitter(ttl), secondsToIstMidnight()) : jitter(ttl))
           )
           .catch((err) =>
             logger.warn("cacheRoute write-back failed", {

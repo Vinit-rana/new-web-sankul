@@ -1,3 +1,4 @@
+import { istDayIndex } from "./istJson";
 // src/utils/planDuration.ts
 //
 // Plan `duration` on PackageCourseEbookPrice / live-course price rows is
@@ -97,14 +98,22 @@ export const extendEndAt = ({
 
 /**
  * Days remaining on a subscription, for frontend "Extend Validity" UX.
- * Returns ceil((endAt - now) / 1 day), floored at 0 for expired rows.
- * `null` endAt (lifetime grants) -> `null` so the UI can hide the counter.
+ *
+ * IST CALENDAR days, not 24h chunks: `istDate(endAt) - istDate(now)`, so every
+ * response computed on the same IST day agrees — the old `ceil((endAt-now)/1d)`
+ * stepped at endAt's clock time, and two 24h-cached routes (list vs detail)
+ * filled a few minutes apart disagreed by 1 all day. Route caches are also
+ * capped at IST midnight (cacheRoute) so a cached value never outlives its day.
+ *
+ * Active rows are never 0: expires-today → 1. Expired → 0. `null` endAt
+ * (lifetime grants) → `null` so the UI can hide the counter.
  */
 export const computeDaysLeft = (
   endAt: Date | null | undefined,
   now: Date = new Date()
 ): number | null => {
   if (!endAt) return null;
-  const ms = endAt.getTime() - now.getTime();
-  return Math.max(0, Math.ceil(ms / 86_400_000));
+  const end = new Date(endAt);
+  if (end.getTime() <= now.getTime()) return 0;
+  return Math.max(1, istDayIndex(end) - istDayIndex(now));
 };

@@ -1,4 +1,5 @@
 import { prisma } from "../../config/prisma";
+import { computeDaysLeft } from "../../utils/planDuration";
 import logger from "../../utils/logger";
 import { getErrorMessage } from "../../utils/httpResponse";
 import { buildPrismaSearch, matchesAllTokens } from "../../utils/searchFilter";
@@ -426,8 +427,7 @@ export const reportLiveSessionProgress = async (input: {
 };
 
 // ── Resume / Learning READ hub (SQL) ─────────────────────────────────────────
-const daysLeftOf = (endAt: Date | null | undefined, now: Date) =>
-  endAt ? Math.max(0, Math.ceil((new Date(endAt).getTime() - now.getTime()) / 86_400_000)) : null;
+const daysLeftOf = computeDaysLeft;
 const pct = (done: number, total: number) => (total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0);
 const educatorOf = (e: any) => (e ? { id: String(e.id), name: e.name ?? null, image: e.image ?? null } : null);
 

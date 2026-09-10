@@ -15,14 +15,13 @@
  * package subscription module.
  */
 import { commerceEbookSubRepository as repo } from "./commerce-ebook-sub.repository";
+import { computeDaysLeft } from "../../utils/planDuration";
 import { catalogEbookRepository } from "../catalog-ebook/catalog-ebook.repository";
 
 import { toEbookDto } from "../catalog-ebook/catalog-ebook.transformer";
 
 
-/** Whole-day difference (ceil), matching the controller's `daysBetween`. */
-const daysBetween = (from: Date, to: Date): number =>
-  Math.max(0, Math.ceil((to.getTime() - from.getTime()) / 86_400_000));
+const daysBetween = (from: Date, to: Date): number => computeDaysLeft(to, from) ?? 0;
 
 // ── entitlement check (the access gate) ─────────────────────────────────────
 

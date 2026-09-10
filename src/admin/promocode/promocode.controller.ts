@@ -170,7 +170,7 @@ export const updatePromocode = async (req: Request, res: Response) => {
         // appliesTo changed but plans omitted: drop now-orphaned links across
         // the full (multi-type) covered set.
         const validPlans = await pcSql.resolveValidPlansMultiSql(appliesTo);
-        await pcSql.prunePlanLinksSql(nid, [...validPlans.keys()]);
+        await pcSql.prunePlanLinksSql(nid, validPlans);
       }
       return res.status(200).json({ success: true, data: (r as any).data });
     } catch (e: any) {

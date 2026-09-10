@@ -539,7 +539,7 @@ const resolveOwnedEndAt = async (customerId: number | null, courseIds: number[],
 };
 
 // ── shaping helpers ────────────────────────────────────────────────────────────
-const daysBetween = (from: Date, to: Date) => Math.max(0, Math.ceil((to.getTime() - from.getTime()) / 86_400_000));
+const daysBetween = (from: Date, to: Date) => computeDaysLeft(to, from) ?? 0;
 
 // NOTE: the former free-material shaper was removed — study materials are always
 // paid, so freeMaterials() now returns an empty page (see its definition above).

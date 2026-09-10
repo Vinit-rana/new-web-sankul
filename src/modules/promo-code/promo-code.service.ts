@@ -495,8 +495,13 @@ const toPublicPromoDto = (
  *
  * Where an entity's plans carry different percentages the highest is reported
  * ("up to X% off") — the listing is a teaser; checkout still prices per plan.
+ *
+ * A link that matches at 0% is left unset so the DTO falls back to the row's
+ * own discountType/discountValue — the same fallback resolvePromoForPlanSql
+ * applies at checkout. Linked-but-no-match stays 0: checkout rejects every plan
+ * of that entity, so there is nothing to advertise.
  */
-const resolveEffectiveDiscounts = async (
+export const resolveEffectiveDiscounts = async (
   rows: any[],
   appliesTo?: { type: AppliesToType; id: number }
 ): Promise<Map<number, { discountType: string; discountValue: number }>> => {
@@ -532,7 +537,10 @@ const resolveEffectiveDiscounts = async (
   }
 
   for (const id of linked) {
-    out.set(id, { discountType: "percentage", discountValue: best.get(id) ?? 0 });
+    const pct = best.get(id);
+    if (pct === undefined) out.set(id, { discountType: "percentage", discountValue: 0 }); // linked, none in scope
+    else if (pct > 0) out.set(id, { discountType: "percentage", discountValue: pct });
+    // matched at 0% → unset → row column, mirroring checkout
   }
   return out;
 };
@@ -780,15 +788,12 @@ export interface PlanLinkInputSql {
   promoterPercentage: number;
   customerPercentage: number;
   /**
-   * OPTIONAL disambiguator. A bare `planId` is not globally unique: live-course
-   * plan ids and test-series price ids live in their own tables and overlap the
-   * ws_package_course_ebook_price id space (live plans are 1-4 and price plans 1-4
-   * both exist today). For a promocode whose appliesTo spans a live course AND a
-   * package/course/ebook, a colliding id is genuinely ambiguous from the payload
-   * alone. Send this and the link is resolved exactly; omit it and the resolver
-   * falls back to first-match and logs a warning.
+   * Half of the link's identity. A bare `planId` is not globally unique:
+   * live-course plan ids and test-series price ids live in their own tables and
+   * overlap the ws_package_course_ebook_price id space, so (planId, planKind) is
+   * the key everywhere below — resolve, upsert AND replace-delete.
    */
-  planKind?: PlanKind;
+  planKind: PlanKind;
 }
 
 /** Load all active plans for the given entities of `type`, normalised. */
@@ -875,27 +880,20 @@ export const loadPlansForEntitiesSql = async (
 export type ValidPlanMap = Map<number, ResolvedPlanSql[]>;
 
 /**
- * Pick the plan a `plans[]` entry refers to. Exact when the caller sent a
- * `planKind`; otherwise first-match, with a warning so an ambiguous link that
- * lands on the wrong kind is traceable instead of silent.
+ * Pick the plan a `plans[]` entry refers to: exact (planId, planKind) match or
+ * 400. No first-match fallback — with a live plan and a test-series plan sharing
+ * an id it stored the second under the first's row and lost a link silently.
  */
 const pickPlanCandidate = (
   candidates: ResolvedPlanSql[],
-  wanted: PlanKind | undefined,
-  ctx: { promocodeId: number; planId: number }
+  wanted: PlanKind,
+  planId: number
 ): ResolvedPlanSql => {
-  if (candidates.length === 1) return candidates[0];
-  if (wanted) {
-    const exact = candidates.find((c) => c.kind === wanted);
-    if (exact) return exact;
-  }
-  logger.warn("syncPlanLinksSql ambiguous planId", {
-    ...ctx,
-    wanted: wanted ?? null,
-    candidates: candidates.map((c) => `${c.kind}:${c.type}`),
-    picked: `${candidates[0].kind}:${candidates[0].type}`,
-  });
-  return candidates[0];
+  const exact = candidates.find((c) => c.kind === wanted);
+  if (exact) return exact;
+  throw badRequest(
+    `plans[]: planId ${planId} is not a ${wanted} plan of the selected entities (found: ${[...new Set(candidates.map((c) => c.kind))].join(", ")}).`
+  );
 };
 
 /**
@@ -913,13 +911,11 @@ export const syncPlanLinksSql = async (
     .map((p) => ({ ...p, pid: Number(p.planId) }))
     .filter((p) => Number.isInteger(p.pid) && validPlans.has(p.pid));
 
+  // (planId, planKind) pairs actually written — the replace-delete keeps exactly these.
+  const keptKeys: { planId: number; planKind: PlanKind }[] = [];
   for (const p of kept) {
-    // A bare planId collides across the three plan tables, so prefer the FE's
-    // explicit planKind when it sent one.
-    const { kind, type } = pickPlanCandidate(validPlans.get(p.pid)!, p.planKind, {
-      promocodeId,
-      planId: p.pid,
-    });
+    const { kind, type } = pickPlanCandidate(validPlans.get(p.pid)!, p.planKind, p.pid);
+    keptKeys.push({ planId: p.pid, planKind: kind });
     // planKind is part of the identity: (promocodeId, planId) alone can match a
     // live-course link when a price link was meant, and the update would then
     // rewrite the wrong row's percentages.
@@ -954,29 +950,32 @@ export const syncPlanLinksSql = async (
     }
   }
 
-  const keepIds = kept.map((p) => p.pid);
-  await prisma.promotedPackageCourseEbook.deleteMany({
-    where: {
-      promocodeId,
-      ...(keepIds.length ? { planId: { notIn: keepIds } } : {}),
-    },
-  });
+  await deleteLinksExcept(promocodeId, keptKeys);
 };
 
 /**
- * Drop every link whose planId isn't in `validPlanIds` (used when appliesTo
- * changes but `plans` is omitted, so stale percentages don't linger).
+ * Delete every link of the promocode whose (planId, planKind) is not in `keep`.
+ * Keyed on the pair, not planId alone: removing test-series plan 1 while keeping
+ * live plan 1 must drop exactly the test-series row.
+ */
+const deleteLinksExcept = (
+  promocodeId: number,
+  keep: { planId: number; planKind: PlanKind }[]
+) =>
+  prisma.promotedPackageCourseEbook.deleteMany({
+    where: { promocodeId, ...(keep.length ? { NOT: keep } : {}) },
+  });
+
+/**
+ * Drop every link not resolvable from `validPlans` (used when appliesTo changes
+ * but `plans` is omitted, so stale percentages don't linger).
  */
 export const prunePlanLinksSql = async (
   promocodeId: number,
-  validPlanIds: number[]
+  validPlans: ValidPlanMap
 ): Promise<void> => {
-  await prisma.promotedPackageCourseEbook.deleteMany({
-    where: {
-      promocodeId,
-      ...(validPlanIds.length ? { planId: { notIn: validPlanIds } } : {}),
-    },
-  });
+  const keep = [...validPlans.values()].flat().map((p) => ({ planId: p.id, planKind: p.kind }));
+  await deleteLinksExcept(promocodeId, keep);
 };
 
 /** Delete all plan links for a promocode (delete/bulk-delete cleanup). */

@@ -1,7 +1,9 @@
 import { termsRepository } from "./terms.repository";
 import { toTermsDto } from "./terms.transformer";
-import type { TermsCreateInput, TermsDto, TermsModule, TermsUpdateInput } from "./terms.types";
+import type { ClientTermsDto, TermsCreateInput, TermsDto, TermsModule, TermsUpdateInput } from "./terms.types";
 import { TERMS_MODULES } from "./terms.types";
+import { departmentRepository } from "../department/department.repository";
+import { toDepartmentDto } from "../department/department.transformer";
 
 export const parseTermsId = (id: string): number | null => {
   const n = Number(id);
@@ -127,13 +129,28 @@ export const TERMS_MODULE_FILTER_MESSAGE = `Invalid \`module\`. Allowed: ${TERMS
  */
 export const getClientTerms = async (
   moduleName?: string
-): Promise<TermsDto | TermsDto[] | null> => {
+): Promise<ClientTermsDto | ClientTermsDto[] | null> => {
   if (moduleName) {
     const row = await termsRepository.findActiveByModule(moduleName);
-    return row ? toTermsDto(row) : null;
+    return row ? withContacts(toTermsDto(row)) : null;
   }
   const rows = await termsRepository.findMany({ activeOnly: true });
-  return rows.map(toTermsDto);
+  return Promise.all(rows.map((r) => withContacts(toTermsDto(r))));
+};
+
+/**
+ * Terms module → ws_department id whose ACTIVE contacts ride along as the
+ * module's helpline numbers. Book/E-Book questions go to "Publication Helpline
+ * Number" (id 3). Referral has no helpline, so it is absent → `contacts: []`.
+ * ponytail: ids pinned by hand, add a ws_department column if a 3rd mapping shows up.
+ */
+const TERMS_HELPLINE_DEPARTMENT: Partial<Record<TermsModule, number>> = { book: 3 };
+
+const withContacts = async (dto: TermsDto): Promise<ClientTermsDto> => {
+  const deptId = TERMS_HELPLINE_DEPARTMENT[dto.module as TermsModule];
+  const dept = deptId ? await departmentRepository.findById(deptId) : null;
+  const contacts = dept?.active ? toDepartmentDto(dept).contacts.filter((c) => c.active) : [];
+  return { ...dto, contacts };
 };
 
 /**

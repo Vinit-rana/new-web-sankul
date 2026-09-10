@@ -11,7 +11,17 @@
 // `app.set("json replacer", ...)` in app.ts, so it applies to EVERY res.json()
 // without touching individual transformers.
 
-const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // UTC+05:30, India has no DST
+export const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // UTC+05:30, India has no DST
+const MS_PER_DAY = 86_400_000;
+
+/** Whole days since epoch of the IST calendar date `d` falls on. */
+export const istDayIndex = (d: Date): number => Math.floor((d.getTime() + IST_OFFSET_MS) / MS_PER_DAY);
+
+/** Seconds until the next IST midnight (≥ 1). */
+export const secondsToIstMidnight = (now: Date = new Date()): number => {
+  const nextMidnight = (istDayIndex(now) + 1) * MS_PER_DAY - IST_OFFSET_MS;
+  return Math.max(1, Math.ceil((nextMidnight - now.getTime()) / 1000));
+};
 const pad = (n: number, len = 2) => String(n).padStart(len, "0");
 
 /** Format a Date as an ISO-8601 string expressed in IST (`...+05:30`). */

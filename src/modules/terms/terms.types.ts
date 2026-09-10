@@ -12,6 +12,8 @@
  *    never accept/offer it. `book` and `referral code` remain.
  */
 
+import type { DepartmentContactDto } from "../department/department.types";
+
 /** Accepted `ws_termsandcondition.module` values (pendrive retired). */
 export const TERMS_MODULES = ["book", "referral code"] as const;
 export type TermsModule = (typeof TERMS_MODULES)[number];
@@ -22,6 +24,16 @@ export interface TermsDto {
   terms: string;
   freeShippingMinimumOrderAmount: number;
   status: boolean;
+}
+
+/**
+ * Client read only: the module's helpline numbers, sourced from the contact-us
+ * department mapped in `TERMS_HELPLINE_DEPARTMENT` (terms.service). Same row
+ * shape as `/client/contact-us` contacts so the app reuses one renderer.
+ * `[]` for a module with no mapped department.
+ */
+export interface ClientTermsDto extends TermsDto {
+  contacts: DepartmentContactDto[];
 }
 
 export interface TermsCreateInput {

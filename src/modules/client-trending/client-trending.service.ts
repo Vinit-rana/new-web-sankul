@@ -12,6 +12,7 @@
  * free = purchase='0'. (Documented catalog drift.)
  */
 import { prisma } from "../../config/prisma";
+import { computeDaysLeft } from "../../utils/planDuration";
 import { isNewItem } from "../../utils/isNew";
 import { signMediaToken } from "../../utils/mediaToken";
 import { buildPrismaSearch } from "../../utils/searchFilter";
@@ -118,7 +119,6 @@ export const resolveFreeCategoryIds = async () => {
 };
 
 const FREE_LIMIT = 10;
-const computeDaysLeft = (endAt: Date, now: Date) => Math.max(0, Math.ceil((endAt.getTime() - now.getTime()) / 86_400_000));
 
 /**
  * getFreeDashboard sections on SQL. Free ebooks = min plan price 0 (ws_ebook has

@@ -24,6 +24,7 @@
  * Contract + FE usage: docs/client/SUBSCRIPTION_ACCESS.md.
  */
 import { offlineVideoDownloadRepository as repo } from "./offline-video-download.repository";
+import { computeDaysLeft } from "../../utils/planDuration";
 import * as mySubSql from "../client-my-subscriptions/client-my-subscriptions.service";
 import { reachableCategoryIds } from "../catalog-category-tree/category-tree.service";
 import {
@@ -36,9 +37,7 @@ import {
 } from "./offline-video-download.types";
 
 
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const daysLeftOf = (endAt: Date | null, now: Date) =>
-  endAt ? Math.max(0, Math.ceil((endAt.getTime() - now.getTime()) / MS_PER_DAY)) : null;
+const daysLeftOf = computeDaysLeft;
 
 interface ActiveProduct {
   kind: DownloadScopeKind;

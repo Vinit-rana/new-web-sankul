@@ -154,7 +154,10 @@ export const FLUSH_GROUPS: Partial<Record<CacheEntity, CacheEntity[]>> = {
   [CacheEntity.CustomerLookup]: [CacheEntity.CustomerLookup],
 
   [CacheEntity.ImageNotification]: [CacheEntity.ImageNotification],
-  [CacheEntity.ContactDepartment]: [CacheEntity.ContactDepartment],
+  // Terms: GET /client/terms embeds the mapped department's contacts as the
+  // module helpline (terms.service TERMS_HELPLINE_DEPARTMENT), so editing a
+  // department must stale cached terms too.
+  [CacheEntity.ContactDepartment]: [CacheEntity.ContactDepartment, CacheEntity.Terms],
 
   // ── Categories (widest fan-out: embedded as summaries+counts in BOTH package
   //    and course details, plus their own listings and tabs) ─────────────────

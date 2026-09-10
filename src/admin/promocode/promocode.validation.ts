@@ -62,13 +62,15 @@ export const planLinkSchema = z.object({
   planId: z.string().regex(objectIdOrIntRegex, "Invalid id"),
   promoterPercentage: percentage.default(0),
   customerPercentage: percentage.default(0),
-  // OPTIONAL, additive (2026-08-21). `planId` is not unique across plan tables:
-  // ws_live_course_plan / ws_test_series_price / ws_package_course_ebook_price
-  // have overlapping id spaces. For a promocode whose appliesTo mixes a live
-  // course with a package/course/ebook, a colliding id cannot be resolved from
-  // the payload alone. Send this to pin the link exactly; omitting it keeps the
-  // previous first-match behaviour (and logs a warning when it is ambiguous).
-  planKind: z.enum(["price", "livePlan", "testSeriesPrice"]).optional(),
+  // REQUIRED (2026-09-10; optional 2026-08-21..). `planId` is not unique across
+  // plan tables: ws_live_course_plan / ws_test_series_price /
+  // ws_package_course_ebook_price have overlapping id spaces, so a live-course
+  // plan and a test-series plan with the same id are two different links. The
+  // old first-match fallback stored one of them under the other's row.
+  planKind: z.enum(["price", "livePlan", "testSeriesPrice"], {
+    required_error: "planKind is required (price | livePlan | testSeriesPrice)",
+    invalid_type_error: "planKind must be price | livePlan | testSeriesPrice",
+  }),
 });
 
 export const createPromocodeSchema = promocodeBase

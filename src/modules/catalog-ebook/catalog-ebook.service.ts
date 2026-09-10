@@ -13,6 +13,7 @@
  * via live-DB tsx, not HTTP, while OFF.
  */
 import type { EBook } from "@prisma/client";
+import { computeDaysLeft } from "../../utils/planDuration";
 import { isNewItem } from "../../utils/isNew";
 import { catalogEbookRepository as repo } from "./catalog-ebook.repository";
 import { toEbookDto, toEbookPlanDto } from "./catalog-ebook.transformer";
@@ -35,9 +36,7 @@ export const parseEbookId = (id: string): number | null => {
   return Number.isInteger(n) && n > 0 ? n : null;
 };
 
-/** Whole-day difference (ceil), matching the controller's `daysBetween`. */
-const daysBetween = (from: Date, to: Date): number =>
-  Math.max(0, Math.ceil((to.getTime() - from.getTime()) / 86_400_000));
+const daysBetween = (from: Date, to: Date): number => computeDaysLeft(to, from) ?? 0;
 
 /** Single active ebook by id (no composition). */
 export const findActiveEbookById = async (id: number): Promise<EbookDto | null> => {

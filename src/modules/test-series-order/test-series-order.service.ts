@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { computeDaysLeft } from "../../utils/planDuration";
 import type { TestSeriesOrder, TestSeriesSubscription } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { extractPromoterAttribution } from "../order-code-snapshot/order-code-snapshot.service";
@@ -163,12 +164,11 @@ export const buildTestSeriesCards = async (customerId: number, now: Date) => {
   const subs = deduped.sort((a, b) => (a.endAt?.getTime() ?? 0) - (b.endAt?.getTime() ?? 0));
   if (!subs.length) return [];
   const series = new Map((await prisma.testSeries.findMany({ where: { id: { in: [...new Set(subs.map((s) => s.testSeriesId))] } }, select: { id: true, title: true, thumbnail: true } })).map((t) => [t.id, t]));
-  const MS = 86400000;
   return subs.map((s) => {
     const ts = s.testSeriesId ? series.get(s.testSeriesId) : null;
     return {
       _id: String(s.id), title: ts?.title || "Test Series", author: null, thumbnail: ts?.thumbnail || null, badge: "Test Series",
-      daysLeft: s.endAt ? Math.max(0, Math.ceil((s.endAt.getTime() - now.getTime()) / MS)) : null,
+      daysLeft: computeDaysLeft(s.endAt, now),
       startAt: s.startAt ?? null, endAt: s.endAt ?? null,
       action: { kind: "test_series", courseId: null, packageId: null, planId: s.planId != null ? String(s.planId) : null, testSeriesId: String(s.testSeriesId), ebookId: null },
       meta: {},

@@ -17,13 +17,13 @@
  * isPaid / isPurchased / daysLeft contract; ids restringified to Mongo form.
  */
 import { prisma } from "../../config/prisma";
+import { computeDaysLeft } from "../../utils/planDuration";
 import { getPurchasedBookIdSet } from "../book-order/book-order.service";
 import { getActivePackageSubMap } from "../commerce-subscription/commerce-subscription.service";
 import { buildLikeTokens } from "../../utils/searchFilter";
 
 const idStr = (v: number | null | undefined): string | null => (v != null ? String(v) : null);
-const daysBetween = (from: Date, to: Date): number =>
-  Math.max(0, Math.ceil((to.getTime() - from.getTime()) / 86_400_000));
+const daysBetween = (from: Date, to: Date): number => computeDaysLeft(to, from) ?? 0;
 
 // ── id-membership lookups (JSON_CONTAINS on the countdown columns) ─────────────
 // Returns the matching row ids (status-active) for a table, honoring an optional
